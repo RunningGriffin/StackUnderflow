@@ -5,6 +5,7 @@
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Authorization
 @using System.Security.Claims
+@using ClassMate.Components.Courses
 
 @attribute [Authorize]
 
@@ -30,69 +31,16 @@
     </button>
 </div>
 
+
 @if (showForm)
 {
-    <div class="card mt-3 p-3">
-        <h3>@(editingCourseId.HasValue ? "Edit Course" : "New Course")</h3>
-
-        <div class="mb-3">
-            <label class="form-label">Course Name *</label>
-            <input class="form-control"
-                   placeholder="e.g. .Net"
-                   @bind="newCourse.Name" />
-        </div>
-
-        <div class="mb-3">
-            <label class="form-label">Course Code</label>
-            <input class="form-control"
-                   placeholder="e.g. CSE 325"
-                   @bind="newCourse.Code" />
-        </div>
-
-        <div class="mb-3">
-            <label class="form-label">Instructor</label>
-            <input class="form-control"
-                   placeholder="e.g. Professor Kumar"
-                   @bind="newCourse.Instructor" />
-        </div>
-
-        <div class="mb-3">
-            <label class="form-label">Course Color</label>
-            <input type="color"
-                   class="form-control form-control-color"
-                   @bind="newCourse.Color" />
-        </div>
-
-        <div class="row mb-3">
-            <div class="col-md-6">
-                <label class="form-label">Semester</label>
-                <select class="form-select" @bind="newCourse.Semester">
-                    <option value="Spring">Spring</option>
-                    <option value="Summer">Summer</option>
-                    <option value="Fall">Fall</option>
-                    <option value="Winter">Winter</option>
-                </select>
-            </div>
-
-            <div class="col-md-6">
-                <label class="form-label">Year</label>
-                <input type="number" class="form-control" min="2000" max="2100" @bind="newCourse.Year" />
-            </div>
-        </div>
-
-        <button type="button"
-                class="btn btn-success"
-                @onclick="SaveCourse">
-
-            @(editingCourseId.HasValue ? "Save Changes" : "Add Course")
-        </button>
-
-        @if (!string.IsNullOrEmpty(errorMessage))
-        {
-            <p class="text-danger mt-2">@errorMessage</p>
-        }
-    </div>
+    <CourseForm
+        CourseModel="@newCourse"
+        IsEditing="@(editingCourseId.HasValue)"
+        ErrorMessage="@errorMessage"
+        OnSave="SaveCourse" />
 }
+
 
 <h3 class="mt-4">Active Courses</h3>
 
@@ -103,73 +51,20 @@
     <p class="text-danger" role="alert">@deleteError</p>
 }
 
+
 @foreach (var course in courses.Where(c => !c.IsArchived))
 {
-    <div class="card mb-2 p-3"
-         style="@($"border-left: 5px solid {course.Color}")">
-
-        <div class="d-flex justify-content-between align-items-start">
-
-            <div>
-                <h5>@course.Name</h5>
-                <p class="mb-1">@course.Code</p>
-                <p class="mb-0">@course.Instructor</p>
-            </div>
-
-            
-            <div class="d-flex flex-column align-items-end gap-2">
-                <span class="badge bg-secondary">
-                    @course.Semester @course.Year
-                </span>
-
-                <button type="button"
-                        class="btn btn-outline-primary btn-sm"
-                        @onclick="() => EditCourse(course)">
-                    Edit
-                </button>
-                <button type="button"
-                        class="btn btn-outline-danger btn-sm"
-                        @onclick="() => AskToDelete(course.Id)">Delete
-                </button>
-                <button type="button"
-                        class="btn btn-outline-secondary btn-sm"
-                        @onclick="() => SetArchiveStatus(course.Id, true)">
-                    Archive
-                </button>
-
-            </div>
-
-        </div>
-
-        @if (pendingDeleteId == course.Id)
-        {
-            <div class="alert alert-warning mt-3">
-                <p>
-                    Are you sure you want to delete
-                    <strong>@course.Name</strong>?
-                </p>
-
-                <p>
-                    Related assignments, notes, and study
-                    sessions will also be deleted.
-                </p>
-
-                <button type="button"
-                        class="btn btn-danger me-2"
-                        @onclick="() => DeleteCourse(course.Id)">
-                    Yes, Delete
-                </button>
-
-                <button type="button"
-                        class="btn btn-secondary"
-                        @onclick="CancelDelete">
-                    Cancel
-                </button>
-            </div>
-        }
-
-    </div>
+    <CourseCard
+        @key="course.Id"
+        Course="course"
+        IsDeletePending="@(pendingDeleteId == course.Id)"
+        OnEdit="EditCourse"
+        OnDeleteRequested="AskToDelete"
+        OnDeleteConfirmed="DeleteCourse"
+        OnDeleteCanceled="CancelDelete"
+        OnArchive="ArchiveCourse" />
 }
+
 
 
 
@@ -201,36 +96,22 @@
 }
 
 
+
 @if (showArchivedCourses)
 {
     <div id="archived-courses-list">
 
         @foreach (var course in courses.Where(c => c.IsArchived))
         {
-            <div class="card mb-2 p-3"
-                 style="@($"border-left: 5px solid {course.Color}")">
-
-                <div class="d-flex justify-content-between align-items-center">
-
-                    <div>
-                        <h5>@course.Name</h5>
-                        <p class="mb-1">@course.Code</p>
-                        <p class="mb-1">@course.Instructor</p>
-                        <small>@course.Semester @course.Year</small>
-                    </div>
-
-                    <button type="button"
-                            class="btn btn-outline-success btn-sm"
-                            @onclick="() => SetArchiveStatus(course.Id, false)">
-                        Restore
-                    </button>
-
-                </div>
-            </div>
+            <CourseCard
+                @key="course.Id"
+                Course="course"
+                OnRestore="RestoreCourse" />
         }
 
     </div>
 }
+
 
 
 
@@ -478,6 +359,16 @@
         await LoadCourses();
     }
 
+
+    private Task ArchiveCourse(int courseId)
+    {
+        return SetArchiveStatus(courseId, true);
+    }
+
+    private Task RestoreCourse(int courseId)
+    {
+        return SetArchiveStatus(courseId, false);
+    }
 
 
     private void ToggleArchivedCourses()
