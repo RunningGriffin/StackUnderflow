@@ -1,0 +1,71 @@
+@page "/assignments"
+@using ClassMate.Data
+@using Microsoft.EntityFrameworkCore
+@inject IServiceScopeFactory ScopeFactory
+@inject ClassMate.Services.CurrentUser CurrentUser
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>My Assignments</PageTitle>
+
+<h1>My Assignments</h1>
+<h2 class="h4">New Assignment</h2>
+
+<EditForm Model="draft">
+    <div class="mb-3">
+        <label for="course" class="form-label">Course</label>
+        <InputSelect TValue="int" id="course" class="form-select"
+                     @bind-Value="draft.CourseId">
+            <option value="0">Select a course</option>
+            @foreach (var course in courses)
+            {
+                <option value="@course.Id">@course.Name</option>
+            }
+        </InputSelect>
+    </div>
+
+    <div class="mb-3">
+        <label for="title" class="form-label">Assignment title</label>
+        <InputText id="title" class="form-control" @bind-Value="draft.Title" />
+    </div>
+
+    <div class="mb-3">
+        <label for="due-date" class="form-label">Due date</label>
+        <InputDate id="due-date" class="form-control" @bind-Value="draft.DueDate" />
+    </div>
+
+    <div class="mb-3">
+        <label for="priority" class="form-label">Priority</label>
+        <InputSelect id="priority" class="form-select" @bind-Value="draft.Priority">
+            <option value="@Priority.Low">Low</option>
+            <option value="@Priority.Medium">Medium</option>
+            <option value="@Priority.High">High</option>
+        </InputSelect>
+    </div>
+
+    <PriorityBadge Priority="@draft.Priority" />
+</EditForm>
+
+@code {
+    private Assignment draft = new()
+    {
+        DueDate = DateTime.Today,
+        Priority = Priority.Medium
+    };
+
+    private List<Course> courses = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var userId = await CurrentUser.GetRequiredUserIdAsync();
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        courses = await db.Courses
+            .AsNoTracking()
+            .Where(course => course.UserId == userId)
+            .OrderBy(course => course.Name)
+            .ToListAsync();
+    }
+}

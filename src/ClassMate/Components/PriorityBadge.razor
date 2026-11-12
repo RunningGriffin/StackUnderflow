@@ -7,14 +7,14 @@
 
 @code {
     [Parameter]
-    public AssignmentPriority Priority { get; set; }
-        = AssignmentPriority.Medium;
+    public ClassMate.Data.Priority Priority { get; set; }
+        = ClassMate.Data.Priority.Medium;
 
     private string BadgeClass => Priority switch
     {
-        AssignmentPriority.High => "text-bg-danger",
-        AssignmentPriority.Medium => "text-bg-warning",
-        AssignmentPriority.Low => "text-bg-success",
+        ClassMate.Data.Priority.High => "text-bg-danger",
+        ClassMate.Data.Priority.Medium => "text-bg-warning",
+        ClassMate.Data.Priority.Low => "text-bg-success",
         _ => "text-bg-secondary"
     };
 }
