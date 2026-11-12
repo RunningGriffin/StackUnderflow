@@ -1,7 +1,16 @@
 ﻿@page "/"
 
-<PageTitle>Home</PageTitle>
+<PageTitle>ClassMate</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1>Welcome to ClassMate</h1>
 
-Welcome to your new app.
+<AuthorizeView>
+    <Authorized>
+        <p>Signed in as <strong>@context.User.Identity?.Name</strong>.</p>
+    </Authorized>
+    <NotAuthorized>
+        <p>Keep track of your courses, assignments, notes and study time in one place.</p>
+        <a class="btn btn-primary me-2" href="Account/Register">Sign up</a>
+        <a class="btn btn-outline-primary" href="Account/Login">Log in</a>
+    </NotAuthorized>
+</AuthorizeView>
