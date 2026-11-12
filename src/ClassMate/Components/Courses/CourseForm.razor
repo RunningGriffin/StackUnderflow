@@ -1,0 +1,81 @@
+
+@using ClassMate.Data
+
+<div class="card mt-3 p-3">
+    <h3>@(IsEditing ? "Edit Course" : "New Course")</h3>
+
+    <div class="mb-3">
+        <label class="form-label">Course Name *</label>
+        <input class="form-control"
+               placeholder="e.g. Web Development"
+               @bind="CourseModel.Name" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Course Code</label>
+        <input class="form-control"
+               placeholder="e.g. CSE 325"
+               @bind="CourseModel.Code" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Instructor</label>
+        <input class="form-control"
+               placeholder="e.g. Professor Smith"
+               @bind="CourseModel.Instructor" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Course Color</label>
+        <input type="color"
+               class="form-control form-control-color"
+               @bind="CourseModel.Color" />
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label">Semester</label>
+            <select class="form-select"
+                    @bind="CourseModel.Semester">
+                <option value="Spring">Spring</option>
+                <option value="Summer">Summer</option>
+                <option value="Fall">Fall</option>
+                <option value="Winter">Winter</option>
+            </select>
+        </div>
+
+        <div class="col-md-6">
+            <label class="form-label">Year</label>
+            <input type="number"
+                   class="form-control"
+                   min="2000"
+                   max="2100"
+                   @bind="CourseModel.Year" />
+        </div>
+    </div>
+
+    <button type="button"
+            class="btn btn-success"
+            @onclick="OnSave">
+        @(IsEditing ? "Save Changes" : "Add Course")
+    </button>
+
+    @if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <p class="text-danger mt-2">@ErrorMessage</p>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public Course CourseModel { get; set; } = default!;
+
+    [Parameter]
+    public bool IsEditing { get; set; }
+
+    [Parameter]
+    public string ErrorMessage { get; set; } = "";
+
+    [Parameter]
+    public EventCallback OnSave { get; set; }
+}
