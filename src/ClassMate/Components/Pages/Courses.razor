@@ -1,18 +1,15 @@
 
 @page "/courses"
 @using ClassMate.Data
-
-@using Microsoft.EntityFrameworkCore
 @using Microsoft.AspNetCore.Authorization
 @using System.Security.Claims
 @using ClassMate.Components.Courses
 
 @attribute [Authorize]
 
-@inject IServiceScopeFactory ScopeFactory
+@inject ClassMate.Services.CourseService CourseService
 @inject AuthenticationStateProvider AuthStateProvider
 
-@inject ClassMate.Services.CourseService CourseService
 
 
 
@@ -50,7 +47,7 @@
  
 @if (!string.IsNullOrEmpty(deleteError))
 {
-    //this makes it possible to display errors
+    @*this makes it possible to display errors*@
     <p class="text-danger" role="alert">@deleteError</p>
 }
 
@@ -118,41 +115,46 @@
 
 
 
+
 @code {
     private bool showForm = false;
+    private bool showArchivedCourses = false;
+
     private int? editingCourseId = null;
-
     private int? pendingDeleteId = null;
-    private string deleteError = "";
 
-    private Course newCourse = new()
-    {
-        Color = "#3b82f6"
-    };
+    private string errorMessage = "";
+    private string deleteError = "";
+    private string archiveError = "";
 
     private List<Course> courses = new();
 
-    private string errorMessage = "";
-
-    private string archiveError = "";
-
-    private bool showArchivedCourses = false;
-
-
-
+    private Course newCourse = new()
+    {
+        Color = "#3b82f6",
+        Semester = "Fall",
+        Year = DateTime.Today.Year
+    };
 
     protected override async Task OnInitializedAsync()
     {
         await LoadCourses();
     }
 
-    private async Task LoadCourses()
+    // Identify the current student
+    private async Task<string?> GetUserIdAsync()
     {
-        var authState = await AuthStateProvider
+        var state = await AuthStateProvider
             .GetAuthenticationStateAsync();
 
-        var userId = authState.User
-            .FindFirstValue(ClaimTypes.NameIdentifier);
+        return state.User.FindFirstValue(
+            ClaimTypes.NameIdentifier);
+    }
+
+    // READ
+    private async Task LoadCourses()
+    {
+        var userId = await GetUserIdAsync();
 
         if (string.IsNullOrEmpty(userId))
         {
@@ -160,15 +162,12 @@
             return;
         }
 
-
         courses = await CourseService.GetCoursesAsync(userId);
-
     }
-
 
     private void ToggleForm()
     {
-        if(showForm)
+        if (showForm)
         {
             showForm = false;
             ResetForm();
@@ -179,10 +178,21 @@
             showForm = true;
         }
     }
-    //this makes it so clicking cancel discards the changes
-    //that are not saved.
 
+    private void ResetForm()
+    {
+        newCourse = new Course
+        {
+            Color = "#3b82f6",
+            Semester = "Fall",
+            Year = DateTime.Today.Year
+        };
 
+        editingCourseId = null;
+        errorMessage = "";
+    }
+
+    // CREATE or UPDATE
     private async Task SaveCourse()
     {
         if (string.IsNullOrWhiteSpace(newCourse.Name))
@@ -193,15 +203,11 @@
 
         if (newCourse.Year < 2000 || newCourse.Year > 2100)
         {
-            errorMessage = "Enter a year between 2000 and 2100.";
+            errorMessage = "Enter a valid year.";
             return;
         }
 
-        var authState = await AuthStateProvider
-            .GetAuthenticationStateAsync();
-
-        var userId = authState.User
-            .FindFirstValue(ClaimTypes.NameIdentifier);
+        var userId = await GetUserIdAsync();
 
         if (string.IsNullOrEmpty(userId))
         {
@@ -209,49 +215,19 @@
             return;
         }
 
-        using (var scope = ScopeFactory.CreateScope())
+        bool saved = await CourseService.SaveCourseAsync(
+            userId, newCourse, editingCourseId);
+
+        if (!saved)
         {
-            var db = scope.ServiceProvider
-                .GetRequiredService<ApplicationDbContext>();
-
-            if (editingCourseId.HasValue)
-            {
-                // Updates an existing course
-                var existingCourse = await db.Courses
-                    .FirstOrDefaultAsync(c =>
-                        c.Id == editingCourseId.Value &&
-                        c.UserId == userId);
-
-                if (existingCourse is null)
-                {
-                    errorMessage = "Course not found.";
-                    return;
-                }
-
-                existingCourse.Name = newCourse.Name.Trim();
-                existingCourse.Code = newCourse.Code;
-                existingCourse.Instructor = newCourse.Instructor;
-                existingCourse.Color = newCourse.Color;
-                existingCourse.Semester = newCourse.Semester;
-                existingCourse.Year = newCourse.Year;
-            }
-            else
-            {
-                // this creates a new course
-                newCourse.Name = newCourse.Name.Trim();
-                newCourse.UserId = userId;
-                db.Courses.Add(newCourse);
-            }
-
-            await db.SaveChangesAsync();
+            errorMessage = "Course not found.";
+            return;
         }
 
         ResetForm();
         showForm = false;
-
         await LoadCourses();
     }
-
 
     private void EditCourse(Course course)
     {
@@ -271,20 +247,6 @@
         showForm = true;
     }
 
-
-    private void ResetForm()
-    {
-        newCourse = new Course
-        {
-            Color = "#3b82f6",
-            Semester = "Fall",
-            Year = DateTime.Today.Year
-        };
-
-        editingCourseId = null;
-        errorMessage = "";
-    }
-
     private void AskToDelete(int courseId)
     {
         pendingDeleteId = courseId;
@@ -297,17 +259,13 @@
         deleteError = "";
     }
 
-
+    // DELETE
     private async Task DeleteCourse(int courseId)
     {
         if (pendingDeleteId != courseId)
             return;
 
-        var authState = await AuthStateProvider
-            .GetAuthenticationStateAsync();
-
-        var userId = authState.User
-            .FindFirstValue(ClaimTypes.NameIdentifier);
+        var userId = await GetUserIdAsync();
 
         if (string.IsNullOrEmpty(userId))
         {
@@ -315,32 +273,13 @@
             return;
         }
 
-        using (var scope = ScopeFactory.CreateScope())
+        bool deleted = await CourseService.DeleteCourseAsync(
+            courseId, userId);
+
+        if (!deleted)
         {
-            var db = scope.ServiceProvider
-                .GetRequiredService<ApplicationDbContext>();
-
-            var course = await db.Courses
-                .Include(c => c.Assignments)
-                .Include(c => c.Notes)
-                .Include(c => c.Sessions)
-                .FirstOrDefaultAsync(c =>
-                    c.Id == courseId &&
-                    c.UserId == userId);
-
-            if (course is null)
-            {
-                deleteError = "Course not found.";
-                return;
-            }
-
-            db.Assignments.RemoveRange(course.Assignments);
-            db.Notes.RemoveRange(course.Notes);
-            db.StudySessions.RemoveRange(course.Sessions);
-
-            db.Courses.Remove(course);
-
-            await db.SaveChangesAsync();
+            deleteError = "Course not found.";
+            return;
         }
 
         pendingDeleteId = null;
@@ -355,6 +294,10 @@
         await LoadCourses();
     }
 
+    private void ToggleArchivedCourses()
+    {
+        showArchivedCourses = !showArchivedCourses;
+    }
 
     private Task ArchiveCourse(int courseId)
     {
@@ -366,19 +309,11 @@
         return SetArchiveStatus(courseId, false);
     }
 
-
-    private void ToggleArchivedCourses()
+    // ARCHIVE or RESTORE
+    private async Task SetArchiveStatus(
+        int courseId, bool isArchived)
     {
-        showArchivedCourses = !showArchivedCourses;
-    }
-
-    private async Task SetArchiveStatus(int courseId, bool isArchived)
-    {
-        var authState = await AuthStateProvider
-            .GetAuthenticationStateAsync();
-
-        var userId = authState.User
-            .FindFirstValue(ClaimTypes.NameIdentifier);
+        var userId = await GetUserIdAsync();
 
         if (string.IsNullOrEmpty(userId))
         {
@@ -386,25 +321,13 @@
             return;
         }
 
-        using (var scope = ScopeFactory.CreateScope())
+        bool updated = await CourseService.SetArchiveStatusAsync(
+            courseId, userId, isArchived);
+
+        if (!updated)
         {
-            var db = scope.ServiceProvider
-                .GetRequiredService<ApplicationDbContext>();
-
-            var course = await db.Courses
-                .FirstOrDefaultAsync(c =>
-                    c.Id == courseId &&
-                    c.UserId == userId);
-
-            if (course is null)
-            {
-                archiveError = "Course not found.";
-                return;
-            }
-
-            course.IsArchived = isArchived;
-
-            await db.SaveChangesAsync();
+            archiveError = "Course not found.";
+            return;
         }
 
         archiveError = "";
@@ -417,9 +340,4 @@
 
         await LoadCourses();
     }
-
-
-
-
 }
-
