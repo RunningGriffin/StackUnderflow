@@ -12,6 +12,9 @@
 @inject IServiceScopeFactory ScopeFactory
 @inject AuthenticationStateProvider AuthStateProvider
 
+@inject ClassMate.Services.CourseService CourseService
+
+
 
 <PageTitle>My Courses</PageTitle>
 
@@ -157,16 +160,9 @@
             return;
         }
 
-        using var scope = ScopeFactory.CreateScope();
 
-        var db = scope.ServiceProvider
-            .GetRequiredService<ApplicationDbContext>();
+        courses = await CourseService.GetCoursesAsync(userId);
 
-        courses = await db.Courses
-            .AsNoTracking()
-            .Where(c => c.UserId == userId)
-            .OrderBy(c => c.Name)
-            .ToListAsync();
     }
 
 
