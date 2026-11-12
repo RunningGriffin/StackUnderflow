@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using ClassMate.Components;
 using ClassMate.Components.Account;
 using ClassMate.Data;
+using ClassMate.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,6 +15,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<IdentityRedirectManager>();
 builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
+builder.Services.AddScoped<CurrentUser>();
 
 builder.Services.AddAuthentication(options =>
     {
@@ -29,8 +31,17 @@ builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
     {
-        options.SignIn.RequireConfirmedAccount = true;
+        // No real email sender is configured yet (IdentityNoOpEmailSender), so new
+        // users are signed in right after sign up instead of waiting on a
+        // confirmation email. Flip back to true once a real IEmailSender exists.
+        options.SignIn.RequireConfirmedAccount = false;
         options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
+
+        options.User.RequireUniqueEmail = true;
+
+        // Lock an account for 5 minutes after 5 wrong passwords in a row.
+        options.Lockout.MaxFailedAccessAttempts = 5;
+        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
     })
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddSignInManager()
