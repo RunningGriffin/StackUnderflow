@@ -1,0 +1,409 @@
+
+@page "/courses"
+@using ClassMate.Data
+
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+
+@attribute [Authorize]
+
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthStateProvider
+
+
+<PageTitle>My Courses</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h1>My Courses</h1>
+        <p>Manage your courses for this semester.</p>
+    </div>
+
+    <button type="button"
+            class="btn btn-primary rounded-circle"
+            style="width: 44px; height: 44px;"
+            title="@(showForm ? "Cancel" : "Add Course")"
+            aria-label="@(showForm ? "Cancel" : "Add Course")"
+            @onclick="ToggleForm">
+        @(showForm ? "×" : "+")
+    </button>
+</div>
+
+@if (showForm)
+{
+    <div class="card mt-3 p-3">
+        <h3>@(editingCourseId.HasValue ? "Edit Course" : "New Course")</h3>
+
+        <div class="mb-3">
+            <label class="form-label">Course Name *</label>
+            <input class="form-control"
+                   placeholder="e.g. .Net"
+                   @bind="newCourse.Name" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Course Code</label>
+            <input class="form-control"
+                   placeholder="e.g. CSE 325"
+                   @bind="newCourse.Code" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Instructor</label>
+            <input class="form-control"
+                   placeholder="e.g. Professor Kumar"
+                   @bind="newCourse.Instructor" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Course Color</label>
+            <input type="color"
+                   class="form-control form-control-color"
+                   @bind="newCourse.Color" />
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-d-6">
+                <label class="form-label">Semester</label>
+                <select class="form-select" @bind="newCourse.Semester">
+                    <option value="Spring">Spring</option>
+                    <option value="Summer">Summer</option>
+                    <option value="Fall">Fall</option>
+                    <option value="Winter">Winter</option>
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Year</label>
+                <input type="number" class="form-control" min="2000" max="2100" @bind="newCourse.Year" />
+            </div>
+        </div>
+
+        <button type="button"
+                class="btn btn-success"
+                @onclick="SaveCourse">
+
+            @(editingCourseId.HasValue ? "Save Changes" : "Add Course")
+        </button>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <p class="text-danger mt-2">@errorMessage</p>
+        }
+    </div>
+}
+
+<h3 class="mt-4">Your Courses</h3>
+
+ 
+@if (!string.IsNullOrEmpty(deleteError))
+{
+    //this makes it possible to display errors
+    <p class="text-danger" role="alert">@deleteError</p>
+}
+
+@foreach (var course in courses)
+{
+    <div class="card mb-2 p-3"
+         style="@($"border-left: 5px solid {course.Color}")">
+
+        <div class="d-flex justify-content-between align-items-start">
+
+            <div>
+                <h5>@course.Name</h5>
+                <p class="mb-1">@course.Code</p>
+                <p class="mb-0">@course.Instructor</p>
+            </div>
+
+            
+            <div class="d-flex flex-column align-items-end gap-2">
+                <span class="badge bg-secondary">
+                    @course.Semester @course.Year
+                </span>
+
+                <button type="button"
+                        class="btn btn-outline-primary btn-sm"
+                        @onclick="() => EditCourse(course)">
+                    Edit
+                </button>
+                <button type="button"
+                        class="btn btn-outline-danger btn-sm"
+                        @onclick="() => AskToDelete(course.Id)">Delete
+                        </button>
+            </div>
+
+        </div>
+
+        @if (pendingDeleteId == course.Id)
+        {
+            <div class="alert alert-warning mt-3">
+                <p>
+                    Are you sure you want to delete
+                    <strong>@course.Name</strong>?
+                </p>
+
+                <p>
+                    Related assignments, notes, and study
+                    sessions will also be deleted.
+                </p>
+
+                <button type="button"
+                        class="btn btn-danger me-2"
+                        @onclick="() => DeleteCourse(course.Id)">
+                    Yes, Delete
+                </button>
+
+                <button type="button"
+                        class="btn btn-secondary"
+                        @onclick="CancelDelete">
+                    Cancel
+                </button>
+            </div>
+        }
+
+    </div>
+}
+
+@code {
+    private bool showForm = false;
+    private int? editingCourseId = null;
+
+    private int? pendingDeleteId = null;
+    private string deleteError = "";
+
+    private Course newCourse = new()
+    {
+        Color = "#3b82f6"
+    };
+
+    private List<Course> courses = new();
+
+    private string errorMessage = "";
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCourses();
+    }
+
+    private async Task LoadCourses()
+    {
+        var authState = await AuthStateProvider
+            .GetAuthenticationStateAsync();
+
+        var userId = authState.User
+            .FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            courses = new();
+            return;
+        }
+
+        using var scope = ScopeFactory.CreateScope();
+
+        var db = scope.ServiceProvider
+            .GetRequiredService<ApplicationDbContext>();
+
+        courses = await db.Courses
+            .AsNoTracking()
+            .Where(c => c.UserId == userId)
+            .OrderBy(c => c.Name)
+            .ToListAsync();
+    }
+
+
+    private void ToggleForm()
+    {
+        if(showForm)
+        {
+            showForm = false;
+            ResetForm();
+        }
+        else
+        {
+            ResetForm();
+            showForm = true;
+        }
+    }
+    //this makes it so clicking cancel discards the changes
+    //that are not saved.
+
+
+    private async Task SaveCourse()
+    {
+        if (string.IsNullOrWhiteSpace(newCourse.Name))
+        {
+            errorMessage = "Course name is required.";
+            return;
+        }
+
+        if (newCourse.Year < 2000 || newCourse.Year > 2100)
+        {
+            errorMessage = "Enter a year between 2000 and 2100.";
+            return;
+        }
+
+        var authState = await AuthStateProvider
+            .GetAuthenticationStateAsync();
+
+        var userId = authState.User
+            .FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            errorMessage = "Please log in.";
+            return;
+        }
+
+        using (var scope = ScopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+            if (editingCourseId.HasValue)
+            {
+                // Updates an existing course
+                var existingCourse = await db.Courses
+                    .FirstOrDefaultAsync(c =>
+                        c.Id == editingCourseId.Value &&
+                        c.UserId == userId);
+
+                if (existingCourse is null)
+                {
+                    errorMessage = "Course not found.";
+                    return;
+                }
+
+                existingCourse.Name = newCourse.Name.Trim();
+                existingCourse.Code = newCourse.Code;
+                existingCourse.Instructor = newCourse.Instructor;
+                existingCourse.Color = newCourse.Color;
+                existingCourse.Semester = newCourse.Semester;
+                existingCourse.Year = newCourse.Year;
+            }
+            else
+            {
+                // this creates a new course
+                newCourse.Name = newCourse.Name.Trim();
+                newCourse.UserId = userId;
+                db.Courses.Add(newCourse);
+            }
+
+            await db.SaveChangesAsync();
+        }
+
+        ResetForm();
+        showForm = false;
+
+        await LoadCourses();
+    }
+
+
+    private void EditCourse(Course course)
+    {
+        editingCourseId = course.Id;
+
+        newCourse = new Course
+        {
+            Name = course.Name,
+            Code = course.Code,
+            Instructor = course.Instructor,
+            Color = course.Color,
+            Semester = course.Semester,
+            Year = course.Year
+        };
+
+        errorMessage = "";
+        showForm = true;
+    }
+
+
+    private void ResetForm()
+    {
+        newCourse = new Course
+        {
+            Color = "#3b82f6",
+            Semester = "Fall",
+            Year = DateTime.Today.Year
+        };
+
+        editingCourseId = null;
+        errorMessage = "";
+    }
+
+    private void AskToDelete(int courseId)
+    {
+        pendingDeleteId = courseId;
+        deleteError = "";
+    }
+
+    private void CancelDelete()
+    {
+        pendingDeleteId = null;
+        deleteError = "";
+    }
+
+
+    private async Task DeleteCourse(int courseId)
+    {
+        if (pendingDeleteId != courseId)
+            return;
+
+        var authState = await AuthStateProvider
+            .GetAuthenticationStateAsync();
+
+        var userId = authState.User
+            .FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            deleteError = "Please log in.";
+            return;
+        }
+
+        using (var scope = ScopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+            var course = await db.Courses
+                .Include(c => c.Assignments)
+                .Include(c => c.Notes)
+                .Include(c => c.Sessions)
+                .FirstOrDefaultAsync(c =>
+                    c.Id == courseId &&
+                    c.UserId == userId);
+
+            if (course is null)
+            {
+                deleteError = "Course not found.";
+                return;
+            }
+
+            db.Assignments.RemoveRange(course.Assignments);
+            db.Notes.RemoveRange(course.Notes);
+            db.StudySessions.RemoveRange(course.Sessions);
+
+            db.Courses.Remove(course);
+
+            await db.SaveChangesAsync();
+        }
+
+        pendingDeleteId = null;
+        deleteError = "";
+
+        if (editingCourseId == courseId)
+        {
+            ResetForm();
+            showForm = false;
+        }
+
+        await LoadCourses();
+    }
+
+
+
+}
+
