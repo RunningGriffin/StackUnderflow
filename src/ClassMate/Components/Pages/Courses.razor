@@ -1,0 +1,343 @@
+
+@page "/courses"
+@using ClassMate.Data
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@using ClassMate.Components.Courses
+
+@attribute [Authorize]
+
+@inject ClassMate.Services.CourseService CourseService
+@inject AuthenticationStateProvider AuthStateProvider
+
+
+
+
+<PageTitle>My Courses</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h1>My Courses</h1>
+        <p>Manage your courses for this semester.</p>
+    </div>
+
+    <button type="button"
+            class="btn btn-primary rounded-circle"
+            style="width: 44px; height: 44px;"
+            title="@(showForm ? "Cancel" : "Add Course")"
+            aria-label="@(showForm ? "Cancel" : "Add Course")"
+            @onclick="ToggleForm">
+        @(showForm ? "×" : "+")
+    </button>
+</div>
+
+
+@if (showForm)
+{
+    <CourseForm
+        CourseModel="@newCourse"
+        IsEditing="@(editingCourseId.HasValue)"
+        ErrorMessage="@errorMessage"
+        OnSave="SaveCourse" />
+}
+
+
+<h3 class="mt-4">Active Courses</h3>
+
+ 
+@if (!string.IsNullOrEmpty(deleteError))
+{
+    @*this makes it possible to display errors*@
+    <p class="text-danger" role="alert">@deleteError</p>
+}
+
+
+@foreach (var course in courses.Where(c => !c.IsArchived))
+{
+    <CourseCard
+        @key="course.Id"
+        Course="course"
+        IsDeletePending="@(pendingDeleteId == course.Id)"
+        OnEdit="EditCourse"
+        OnDeleteRequested="AskToDelete"
+        OnDeleteConfirmed="DeleteCourse"
+        OnDeleteCanceled="CancelDelete"
+        OnArchive="ArchiveCourse" />
+}
+
+
+
+
+<div class="d-flex justify-content-between align-items-center mt-5 mb-3">
+
+    <h3 class="mb-0">Archived Courses</h3>
+
+    <button type="button"
+            class="btn btn-outline-secondary"
+            @onclick="ToggleArchivedCourses"
+            aria-expanded="@showArchivedCourses"
+            aria-controls="archived-courses-list">
+
+        <span class="bi @(showArchivedCourses ? "bi-chevron-up" : "bi-chevron-down")"
+              aria-hidden="true"></span>
+
+        @(showArchivedCourses ? "Hide Archived" : "Show Archived")
+
+    </button>
+
+</div>
+
+
+@if (!string.IsNullOrEmpty(archiveError))
+{
+    <p class="text-danger" role="alert">
+        @archiveError
+    </p>
+}
+
+
+
+@if (showArchivedCourses)
+{
+    <div id="archived-courses-list">
+
+        @foreach (var course in courses.Where(c => c.IsArchived))
+        {
+            <CourseCard
+                @key="course.Id"
+                Course="course"
+                OnRestore="RestoreCourse" />
+        }
+
+    </div>
+}
+
+
+
+
+
+@code {
+    private bool showForm = false;
+    private bool showArchivedCourses = false;
+
+    private int? editingCourseId = null;
+    private int? pendingDeleteId = null;
+
+    private string errorMessage = "";
+    private string deleteError = "";
+    private string archiveError = "";
+
+    private List<Course> courses = new();
+
+    private Course newCourse = new()
+    {
+        Color = "#3b82f6",
+        Semester = "Fall",
+        Year = DateTime.Today.Year
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCourses();
+    }
+
+    // Identify the current student
+    private async Task<string?> GetUserIdAsync()
+    {
+        var state = await AuthStateProvider
+            .GetAuthenticationStateAsync();
+
+        return state.User.FindFirstValue(
+            ClaimTypes.NameIdentifier);
+    }
+
+    // READ
+    private async Task LoadCourses()
+    {
+        var userId = await GetUserIdAsync();
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            courses = new();
+            return;
+        }
+
+        courses = await CourseService.GetCoursesAsync(userId);
+    }
+
+    private void ToggleForm()
+    {
+        if (showForm)
+        {
+            showForm = false;
+            ResetForm();
+        }
+        else
+        {
+            ResetForm();
+            showForm = true;
+        }
+    }
+
+    private void ResetForm()
+    {
+        newCourse = new Course
+        {
+            Color = "#3b82f6",
+            Semester = "Fall",
+            Year = DateTime.Today.Year
+        };
+
+        editingCourseId = null;
+        errorMessage = "";
+    }
+
+    // CREATE or UPDATE
+    private async Task SaveCourse()
+    {
+        if (string.IsNullOrWhiteSpace(newCourse.Name))
+        {
+            errorMessage = "Course name is required.";
+            return;
+        }
+
+        if (newCourse.Year < 2000 || newCourse.Year > 2100)
+        {
+            errorMessage = "Enter a valid year.";
+            return;
+        }
+
+        var userId = await GetUserIdAsync();
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            errorMessage = "Please log in.";
+            return;
+        }
+
+        bool saved = await CourseService.SaveCourseAsync(
+            userId, newCourse, editingCourseId);
+
+        if (!saved)
+        {
+            errorMessage = "Course not found.";
+            return;
+        }
+
+        ResetForm();
+        showForm = false;
+        await LoadCourses();
+    }
+
+    private void EditCourse(Course course)
+    {
+        editingCourseId = course.Id;
+
+        newCourse = new Course
+        {
+            Name = course.Name,
+            Code = course.Code,
+            Instructor = course.Instructor,
+            Color = course.Color,
+            Semester = course.Semester,
+            Year = course.Year
+        };
+
+        errorMessage = "";
+        showForm = true;
+    }
+
+    private void AskToDelete(int courseId)
+    {
+        pendingDeleteId = courseId;
+        deleteError = "";
+    }
+
+    private void CancelDelete()
+    {
+        pendingDeleteId = null;
+        deleteError = "";
+    }
+
+    // DELETE
+    private async Task DeleteCourse(int courseId)
+    {
+        if (pendingDeleteId != courseId)
+            return;
+
+        var userId = await GetUserIdAsync();
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            deleteError = "Please log in.";
+            return;
+        }
+
+        bool deleted = await CourseService.DeleteCourseAsync(
+            courseId, userId);
+
+        if (!deleted)
+        {
+            deleteError = "Course not found.";
+            return;
+        }
+
+        pendingDeleteId = null;
+        deleteError = "";
+
+        if (editingCourseId == courseId)
+        {
+            ResetForm();
+            showForm = false;
+        }
+
+        await LoadCourses();
+    }
+
+    private void ToggleArchivedCourses()
+    {
+        showArchivedCourses = !showArchivedCourses;
+    }
+
+    private Task ArchiveCourse(int courseId)
+    {
+        return SetArchiveStatus(courseId, true);
+    }
+
+    private Task RestoreCourse(int courseId)
+    {
+        return SetArchiveStatus(courseId, false);
+    }
+
+    // ARCHIVE or RESTORE
+    private async Task SetArchiveStatus(
+        int courseId, bool isArchived)
+    {
+        var userId = await GetUserIdAsync();
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            archiveError = "Please log in.";
+            return;
+        }
+
+        bool updated = await CourseService.SetArchiveStatusAsync(
+            courseId, userId, isArchived);
+
+        if (!updated)
+        {
+            archiveError = "Course not found.";
+            return;
+        }
+
+        archiveError = "";
+
+        if (editingCourseId == courseId)
+        {
+            ResetForm();
+            showForm = false;
+        }
+
+        await LoadCourses();
+    }
+}
