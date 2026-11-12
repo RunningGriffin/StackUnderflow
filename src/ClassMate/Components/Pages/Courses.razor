@@ -64,7 +64,7 @@
         </div>
 
         <div class="row mb-3">
-            <div class="col-d-6">
+            <div class="col-md-6">
                 <label class="form-label">Semester</label>
                 <select class="form-select" @bind="newCourse.Semester">
                     <option value="Spring">Spring</option>
@@ -94,7 +94,7 @@
     </div>
 }
 
-<h3 class="mt-4">Your Courses</h3>
+<h3 class="mt-4">Active Courses</h3>
 
  
 @if (!string.IsNullOrEmpty(deleteError))
@@ -103,7 +103,7 @@
     <p class="text-danger" role="alert">@deleteError</p>
 }
 
-@foreach (var course in courses)
+@foreach (var course in courses.Where(c => !c.IsArchived))
 {
     <div class="card mb-2 p-3"
          style="@($"border-left: 5px solid {course.Color}")">
@@ -130,7 +130,13 @@
                 <button type="button"
                         class="btn btn-outline-danger btn-sm"
                         @onclick="() => AskToDelete(course.Id)">Delete
-                        </button>
+                </button>
+                <button type="button"
+                        class="btn btn-outline-secondary btn-sm"
+                        @onclick="() => SetArchiveStatus(course.Id, true)">
+                    Archive
+                </button>
+
             </div>
 
         </div>
@@ -165,6 +171,69 @@
     </div>
 }
 
+
+
+<div class="d-flex justify-content-between align-items-center mt-5 mb-3">
+
+    <h3 class="mb-0">Archived Courses</h3>
+
+    <button type="button"
+            class="btn btn-outline-secondary"
+            @onclick="ToggleArchivedCourses"
+            aria-expanded="@showArchivedCourses"
+            aria-controls="archived-courses-list">
+
+        <span class="bi @(showArchivedCourses ? "bi-chevron-up" : "bi-chevron-down")"
+              aria-hidden="true"></span>
+
+        @(showArchivedCourses ? "Hide Archived" : "Show Archived")
+
+    </button>
+
+</div>
+
+
+@if (!string.IsNullOrEmpty(archiveError))
+{
+    <p class="text-danger" role="alert">
+        @archiveError
+    </p>
+}
+
+
+@if (showArchivedCourses)
+{
+    <div id="archived-courses-list">
+
+        @foreach (var course in courses.Where(c => c.IsArchived))
+        {
+            <div class="card mb-2 p-3"
+                 style="@($"border-left: 5px solid {course.Color}")">
+
+                <div class="d-flex justify-content-between align-items-center">
+
+                    <div>
+                        <h5>@course.Name</h5>
+                        <p class="mb-1">@course.Code</p>
+                        <p class="mb-1">@course.Instructor</p>
+                        <small>@course.Semester @course.Year</small>
+                    </div>
+
+                    <button type="button"
+                            class="btn btn-outline-success btn-sm"
+                            @onclick="() => SetArchiveStatus(course.Id, false)">
+                        Restore
+                    </button>
+
+                </div>
+            </div>
+        }
+
+    </div>
+}
+
+
+
 @code {
     private bool showForm = false;
     private int? editingCourseId = null;
@@ -180,6 +249,12 @@
     private List<Course> courses = new();
 
     private string errorMessage = "";
+
+    private string archiveError = "";
+
+    private bool showArchivedCourses = false;
+
+
 
 
     protected override async Task OnInitializedAsync()
@@ -402,6 +477,60 @@
 
         await LoadCourses();
     }
+
+
+
+    private void ToggleArchivedCourses()
+    {
+        showArchivedCourses = !showArchivedCourses;
+    }
+
+    private async Task SetArchiveStatus(int courseId, bool isArchived)
+    {
+        var authState = await AuthStateProvider
+            .GetAuthenticationStateAsync();
+
+        var userId = authState.User
+            .FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            archiveError = "Please log in.";
+            return;
+        }
+
+        using (var scope = ScopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+            var course = await db.Courses
+                .FirstOrDefaultAsync(c =>
+                    c.Id == courseId &&
+                    c.UserId == userId);
+
+            if (course is null)
+            {
+                archiveError = "Course not found.";
+                return;
+            }
+
+            course.IsArchived = isArchived;
+
+            await db.SaveChangesAsync();
+        }
+
+        archiveError = "";
+
+        if (editingCourseId == courseId)
+        {
+            ResetForm();
+            showForm = false;
+        }
+
+        await LoadCourses();
+    }
+
 
 
 

@@ -21,6 +21,8 @@ namespace ClassMate.Data
 
         public int Year {get; set;} = DateTime.Today.Year;
 
+        public bool IsArchived {get; set;} = false;
+
         public List<Assignment> Assignments {get; set;} = [];
 
         public List<Note> Notes {get; set;} = [];

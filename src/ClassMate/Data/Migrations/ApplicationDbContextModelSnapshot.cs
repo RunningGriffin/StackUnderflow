@@ -133,6 +133,9 @@ namespace ClassMate.Migrations
                     b.Property<string>("Instructor")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");
