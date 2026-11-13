@@ -41,4 +41,14 @@
     -Course Name: Required
     -Course Management: Checks to see if user is logged in.
 
+2. Assignment Management: signed-in students can create, view, edit, and delete assignments for their courses. Saved assignments appear in due-date order and show the course, title, due date, and priority badge.
+ 
+ **How to use**
+ 1. Open **Assignments** from the sidebar. If you haven't created a course yet, open **Courses** and add one first
+ 2. Select a course, enter an assignment title, choose a due date, and select **Low**, **Medium**, or **High** priority. Click **Save Assignment**. 
+ 3. Under **Saved Assignments**, click **Edit** to change an assignment. Click **Save Changes** to keep your edits or **Cancle** to discard them.
+ 4. To remove an assignment, click **Delete**, then **Confirm delete**
 
+ **Validation and access**
+ - Course, title, and due date are required. A blank or spaces-only title prevents the assignment from being saved.
+ - Students can only select their own courses and view, edit, or delete their own assignments.
