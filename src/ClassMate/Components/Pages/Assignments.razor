@@ -9,51 +9,113 @@
 <PageTitle>My Assignments</PageTitle>
 
 <h1>My Assignments</h1>
-<h2 class="h4">New Assignment</h2>
+<h2 class="h4">@(draft.Id == 0 ? "New Assignment" : "Edit Assignment")</h2>
 
-<EditForm Model="draft">
-    <div class="mb-3">
-        <label for="course" class="form-label">Course</label>
-        <InputSelect TValue="int" id="course" class="form-select"
-                     @bind-Value="draft.CourseId">
-            <option value="0">Select a course</option>
-            @foreach (var course in courses)
+<EditForm Model="draft" OnValidSubmit="SaveAssignmentAsync">
+    <ValidationSummary />
+
+    <fieldset disabled="@isSaving">
+        <div class="mb-3">
+            <label for="course" class="form-label">Course</label>
+            <InputSelect TValue="int" id="course" class="form-select"
+                         @bind-Value="draft.CourseId">
+                <option value="0">Select a course</option>
+                @foreach (var course in courses)
+                {
+                    <option value="@course.Id">@course.Name</option>
+                }
+            </InputSelect>
+        </div>
+
+        <div class="mb-3">
+            <label for="title" class="form-label">Assignment title</label>
+            <InputText id="title" class="form-control"
+                       @bind-Value="draft.Title" />
+        </div>
+
+        <div class="mb-3">
+            <label for="due-date" class="form-label">Due date</label>
+            <InputDate id="due-date" class="form-control"
+                       @bind-Value="draft.DueDate" />
+        </div>
+
+        <div class="mb-3">
+            <label for="priority" class="form-label">Priority</label>
+            <InputSelect id="priority" class="form-select"
+                         @bind-Value="draft.Priority">
+                <option value="@Priority.Low">Low</option>
+                <option value="@Priority.Medium">Medium</option>
+                <option value="@Priority.High">High</option>
+            </InputSelect>
+        </div>
+
+        <PriorityBadge Priority="@draft.Priority" />
+
+        <div class="mt-3">
+            <button type="submit" class="btn btn-primary">
+                @(draft.Id == 0 ? "Save Assignment" : "Save Changes")
+            </button>
+
+            @if (draft.Id != 0)
             {
-                <option value="@course.Id">@course.Name</option>
+                <button type="button" class="btn btn-outline-secondary ms-2"
+                        @onclick="CancelEdit">
+                    Cancel
+                </button>
             }
-        </InputSelect>
-    </div>
+        </div>
+    </fieldset>
 
-    <div class="mb-3">
-        <label for="title" class="form-label">Assignment title</label>
-        <InputText id="title" class="form-control" @bind-Value="draft.Title" />
-    </div>
-
-    <div class="mb-3">
-        <label for="due-date" class="form-label">Due date</label>
-        <InputDate id="due-date" class="form-control" @bind-Value="draft.DueDate" />
-    </div>
-
-    <div class="mb-3">
-        <label for="priority" class="form-label">Priority</label>
-        <InputSelect id="priority" class="form-select" @bind-Value="draft.Priority">
-            <option value="@Priority.Low">Low</option>
-            <option value="@Priority.Medium">Medium</option>
-            <option value="@Priority.High">High</option>
-        </InputSelect>
-    </div>
-
-    <PriorityBadge Priority="@draft.Priority" />
+    @if (!string.IsNullOrEmpty(formMessage))
+    {
+        <p class="mt-2" role="status">@formMessage</p>
+    }
 </EditForm>
 
-@code {
-    private Assignment draft = new()
-    {
-        DueDate = DateTime.Today,
-        Priority = Priority.Medium
-    };
+<h2 class="h4 mt-4">Saved Assignments</h2>
 
+@if (savedAssignments.Count == 0)
+{
+    <p>You haven't saved any assignments yet.</p>
+}
+else
+{
+    <ul class="list-group">
+        @foreach (var item in savedAssignments)
+        {
+            <li class="list-group-item" @key="item.Id">
+                <strong>@item.Title</strong>
+                <div>
+                    @item.Course.Name · Due @item.DueDate.ToString("MMM d, yyyy")
+                </div>
+
+                <PriorityBadge Priority="@item.Priority" />
+
+                <button type="button" class="btn btn-sm btn-outline-primary ms-2"
+                        disabled="@isSaving" @onclick="() => StartEdit(item)">
+                    Edit
+                </button>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private Assignment draft = NewDraft();
     private List<Course> courses = new();
+    private List<Assignment> savedAssignments = new();
+    private string formMessage = "";
+    private bool isSaving;
+
+    private static Assignment NewDraft(int courseId = 0)
+    {
+        return new Assignment
+        {
+            CourseId = courseId,
+            DueDate = DateTime.Today,
+            Priority = Priority.Medium
+        };
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -67,5 +129,123 @@
             .Where(course => course.UserId == userId)
             .OrderBy(course => course.Name)
             .ToListAsync();
+
+        savedAssignments = await LoadAssignmentsAsync(db, userId);
+    }
+
+    private Task<List<Assignment>> LoadAssignmentsAsync(
+        ApplicationDbContext db, string userId)
+    {
+        return db.Assignments
+            .AsNoTracking()
+            .Include(item => item.Course)
+            .Where(item => item.UserId == userId)
+            .OrderBy(item => item.DueDate)
+            .ThenBy(item => item.Title)
+            .ThenBy(item => item.Id)
+            .ToListAsync();
+    }
+
+    private void StartEdit(Assignment item)
+    {
+        // Edit a copy so Cancel can discard changes to the form.
+        draft = new Assignment
+        {
+            Id = item.Id,
+            CourseId = item.CourseId,
+            Title = item.Title,
+            DueDate = item.DueDate,
+            Priority = item.Priority
+        };
+
+        formMessage = "";
+    }
+
+    private void CancelEdit()
+    {
+        draft = NewDraft(draft.CourseId);
+        formMessage = "";
+    }
+
+    private async Task SaveAssignmentAsync()
+    {
+        if (isSaving)
+            return;
+
+        if (draft.CourseId == 0)
+        {
+            formMessage = "Choose a course before saving.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(draft.Title))
+        {
+            formMessage = "Enter an assignment title before saving.";
+            return;
+        }
+
+        isSaving = true;
+        formMessage = "";
+
+        try
+        {
+            var userId = await CurrentUser.GetRequiredUserIdAsync();
+
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var ownsCourse = await db.Courses.AnyAsync(course =>
+                course.Id == draft.CourseId && course.UserId == userId);
+
+            if (!ownsCourse)
+            {
+                formMessage = "Choose a course that belongs to your account.";
+                return;
+            }
+
+            Assignment assignment;
+            bool isNew = draft.Id == 0;
+
+            if (isNew)
+            {
+                assignment = new Assignment { UserId = userId };
+                db.Assignments.Add(assignment);
+            }
+            else
+            {
+                var existing = await db.Assignments.SingleOrDefaultAsync(item =>
+                    item.Id == draft.Id && item.UserId == userId);
+
+                if (existing is null)
+                {
+                    formMessage = "This assignment is no longer available. Refresh the page.";
+                    return;
+                }
+
+                assignment = existing;
+            }
+
+            assignment.CourseId = draft.CourseId;
+            assignment.Title = draft.Title.Trim();
+            assignment.DueDate = draft.DueDate;
+            assignment.Priority = draft.Priority;
+
+            await db.SaveChangesAsync();
+
+            draft = NewDraft(assignment.CourseId);
+            formMessage = isNew
+                ? $"Saved “{assignment.Title}”."
+                : $"Updated “{assignment.Title}”.";
+
+            savedAssignments = await LoadAssignmentsAsync(db, userId);
+        }
+        catch (DbUpdateException)
+        {
+            formMessage = "The assignment couldn't be saved. Check the course and try again.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
     }
 }
