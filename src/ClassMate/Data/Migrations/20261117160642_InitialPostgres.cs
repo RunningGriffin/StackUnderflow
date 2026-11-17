@@ -186,7 +186,10 @@ namespace ClassMate.Data.Migrations
                     Name = table.Column<string>(type: "text", nullable: false),
                     Code = table.Column<string>(type: "text", nullable: true),
                     Instructor = table.Column<string>(type: "text", nullable: true),
-                    Color = table.Column<string>(type: "text", nullable: false)
+                    Color = table.Column<string>(type: "text", nullable: false),
+                    Semester = table.Column<string>(type: "text", nullable: false),
+                    Year = table.Column<int>(type: "integer", nullable: false),
+                    IsArchived = table.Column<bool>(type: "boolean", nullable: false)
                 },
                 constraints: table =>
                 {
