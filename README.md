@@ -14,10 +14,15 @@
 
 - cd src/ClassMate
 
-3. Create or update the database
+3. Point the app at your Neon database (use the **.NET** format from Neon's "Connect" dialog, ideally a separate dev branch):
+
+- dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=...;Database=...;Username=...;Password=...;SSL Mode=Require"
+
+4. Create or update the database (the app also applies migrations automatically on startup)
 
 - dotnet ef database update
 
+<<<<<<< Updated upstream
 #### Features
  1. Course Management: Allows user to add, view, edit, delete, and archive their courses.
 
@@ -42,3 +47,10 @@
     -Course Management: Checks to see if user is logged in.
 
 
+=======
+## Deployment (Azure App Service + Neon)
+
+- The app is deployed to Azure App Service; the database is Neon PostgreSQL.
+- Every push to `main` deploys via `.github/workflows/deploy-azure.yml`.
+- One-time Azure setup: `az login`, `gh auth login`, then `bash scripts/azure-setup.sh`.
+>>>>>>> Stashed changes
