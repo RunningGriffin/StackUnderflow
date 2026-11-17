@@ -70,6 +70,15 @@ az identity federated-credential create -g "$RESOURCE_GROUP" --identity-name "$I
   --subject "repo:${GITHUB_REPO}:environment:production" \
   --audiences "api://AzureADTokenExchange" -o none
 
+# GitHub may present the subject with immutable owner/repo IDs (owner@id/repo@id), so trust that form too.
+OWNER_ID="$(gh api "repos/${GITHUB_REPO}" --jq .owner.id)"
+REPO_ID="$(gh api "repos/${GITHUB_REPO}" --jq .id)"
+az identity federated-credential create -g "$RESOURCE_GROUP" --identity-name "$IDENTITY_NAME" \
+  -n github-production-immutable \
+  --issuer "https://token.actions.githubusercontent.com" \
+  --subject "repo:${GITHUB_REPO%%/*}@${OWNER_ID}/${GITHUB_REPO##*/}@${REPO_ID}:environment:production" \
+  --audiences "api://AzureADTokenExchange" -o none
+
 WEBAPP_ID="$(az webapp show -g "$RESOURCE_GROUP" -n "$APP_NAME" --query id -o tsv)"
 az role assignment create --assignee-object-id "$PRINCIPAL_ID" --assignee-principal-type ServicePrincipal \
   --role "Website Contributor" --scope "$WEBAPP_ID" -o none
