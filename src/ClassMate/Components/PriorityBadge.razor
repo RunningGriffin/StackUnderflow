@@ -1,0 +1,20 @@
+@using ClassMate.Data
+@using Microsoft.AspNetCore.Components
+
+<span class="badge @BadgeClass">
+    @Priority priority
+</span>
+
+@code {
+    [Parameter]
+    public ClassMate.Data.Priority Priority { get; set; }
+        = ClassMate.Data.Priority.Medium;
+
+    private string BadgeClass => Priority switch
+    {
+        ClassMate.Data.Priority.High => "text-bg-danger",
+        ClassMate.Data.Priority.Medium => "text-bg-warning",
+        ClassMate.Data.Priority.Low => "text-bg-success",
+        _ => "text-bg-secondary"
+    };
+}

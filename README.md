@@ -1,56 +1,88 @@
 # StackUnderflow
 
+ClassMate is a student planner for managing courses and assignments.
+
 ## Database Setup - Gabriel
 
-- We have 6 tables created to organize Courses, Assignments, Notes, StudyLogs, StudySessions and the usersSettings.
+ClassMate uses Neon PostgreSQL. The application stores courses, assignments,
+notes, study logs, study sessions, and user settings.
 
-### Important Commands
+### Run ClassMate locally
 
-1. Install the EF Core Tool:
+1. In the Neon Console, open your development database branch. Click **Connect**,
+   select **.NET**, and copy the connection string.
+2. From the root of the `StackUnderflow` repository, save the connection string
+   with .NET user secrets. Paste the string when PowerShell prompts you.
 
-- dotnet tool install --global dotnet-ef --version 10.0.13
+   ```powershell
+   $connection = Read-Host "Paste your Neon .NET connection string"
+   dotnet user-secrets set "ConnectionStrings:DefaultConnection" $connection --project .\src\ClassMate\ClassMate.csproj
+   ```
 
-2. Go to project folder
+   Store connection strings in user secrets to keep database credentials out of Git.
 
-- cd src/ClassMate
+3. Start the application.
 
-3. Point the app at your Neon database (use the **.NET** format from Neon's "Connect" dialog, ideally a separate dev branch):
+   ```powershell
+   dotnet run --project .\src\ClassMate\ClassMate.csproj --launch-profile http
+   ```
 
-- dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=...;Database=...;Username=...;Password=...;SSL Mode=Require"
+4. Open [ClassMate](http://localhost:5184). If your development database is new,
+   register a test account and add a course before creating an assignment.
 
-4. Create or update the database (the app also applies migrations automatically on startup)
+ClassMate applies pending database migrations automatically at startup. To apply
+them manually, install `dotnet-ef` if you need it, then run the database update
+from the repository root.
 
-- dotnet ef database update
+```powershell
+dotnet tool install --global dotnet-ef --version 10.0.13
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+dotnet ef database update --project .\src\ClassMate\ClassMate.csproj
+```
 
-<<<<<<< Updated upstream
-#### Features
- 1. Course Management: Allows user to add, view, edit, delete, and archive their courses.
+## Features
 
-***All of these are only available while user is logged in****
+Sign in to manage your courses and assignments.
 
-    Features: 
-    -Add Courses: Add course title, professor, course code, choose the course color, year, and semester.
-    -View Courses: View courses already added, current and archived.
-    -Edit Courses: Be able to edit any course that is active. User can change any of the features (ex:title, code, color, etc)
-    -Delete Courses: Delete any course that is created. 
-    -Archive Courses: Keeps the course and associated information but marks course as inactive. Has a restore option that moves it back to active courses.
+### Course Management
 
-    How to Use: 
-    1.Navigate to Courses page.
-    2.Select the option to add new course (circle with "+")
-    3.Enter course information and push save.
-    4.View the course below.
-    5.Use the available edit, delete, or archive buttons to manage active course.
+- Add a course with a name, course code, instructor, color, semester, and year.
+- View active and archived courses.
+- Edit or delete an active course.
+- Archive a course to move it out of the active list while keeping its information.
+  Restore it when you want it back in the active list.
 
-    Validation:
-    -Course Name: Required
-    -Course Management: Checks to see if user is logged in.
+To add a course, open **Courses**, select **+**, enter the course information,
+and save. The course name is required.
 
+### Assignment Management
 
-=======
-## Deployment (Azure App Service + Neon)
+Students can create, view, edit, and delete assignments for their own courses.
+Each saved assignment shows its title, course, due date, and priority badge.
 
-- The app is deployed to Azure App Service; the database is Neon PostgreSQL.
-- Every push to `main` deploys via `.github/workflows/deploy-azure.yml`.
-- One-time Azure setup: `az login`, `gh auth login`, then `bash scripts/azure-setup.sh`.
->>>>>>> Stashed changes
+1. Open **Assignments** from the sidebar.
+2. Select a course, enter a title, and choose a due date. Select **Low**,
+   **Medium**, or **High** priority. New assignments default to **Medium**.
+3. Click **Save Assignment**. To update it later, click **Edit**, then
+   **Save Changes**. Use **Cancel** to discard the edit.
+4. Select **Due date** or **Priority** under **Sort assignments by**. Priority
+   sorts **High**, then **Medium**, then **Low**. Assignments with the same
+   priority appear in due-date order.
+5. Use **Mark complete** or **Mark incomplete** to save a status change.
+   Incomplete assignments due before today are highlighted and labeled
+   **Overdue**. Completing one clears the highlight and label. Marking it
+   incomplete restores them if the assignment is still overdue.
+6. To remove an assignment, click **Delete**, then **Confirm delete**.
+
+The course, title, and due date are required. A blank or whitespace-only title
+prevents the assignment from being saved. Students can select only their own
+courses and manage only their own assignments.
+
+## Deployment
+
+ClassMate uses Azure App Service for hosting and Neon PostgreSQL for its
+database. Pushes to `main` trigger the GitHub Actions workflow at
+`.github/workflows/deploy-azure.yml`.
+
+For one-time Azure setup, run `az login` and `gh auth login`, then run
+`bash scripts/azure-setup.sh` from the repository root.
