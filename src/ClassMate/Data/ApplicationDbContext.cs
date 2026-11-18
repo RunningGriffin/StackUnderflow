@@ -12,4 +12,11 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<StudyLog> StudyLogs{get; set;}
     public DbSet<UserSettings> UsersSettings{get; set;}
 
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        // Store DateTime as "timestamp without time zone" so values coming from the UI
+        // (DateTimeKind.Unspecified) are accepted by PostgreSQL, matching the old SQLite behaviour.
+        configurationBuilder.Properties<DateTime>().HaveColumnType("timestamp without time zone");
+    }
+
 }
