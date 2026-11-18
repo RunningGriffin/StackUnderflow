@@ -83,16 +83,43 @@
 }
 else
 {
+    <div class="mb-3">
+        <label for="assignment-sort" class="form-label">Sort assignments by</label>
+        <select id="assignment-sort" class="form-select w-auto" @bind="assignmentSort">
+            <option value="@AssignmentSort.DueDate">Due date</option>
+            <option value="@AssignmentSort.Priority">Priority</option>
+        </select>
+    </div>
+
+    var today = DateTime.Today;
+
     <ul class="list-group">
-        @foreach (var item in savedAssignments)
+        @foreach (var item in SortedAssignments)
         {
-            <li class="list-group-item" @key="item.Id">
+            var isOverdue = !item.Completed && item.DueDate.Date < today;
+
+            <li class="list-group-item @(isOverdue ? "list-group-item-danger" : "")" @key="item.Id">
                 <strong>@item.Title</strong>
                 <div>
                     @item.Course.Name · Due @item.DueDate.ToString("MMM d, yyyy")
                 </div>
 
                 <PriorityBadge Priority="@item.Priority" />
+
+                @if (item.Completed)
+                {
+                    <span class="badge text-bg-success ms-1">Complete</span>
+                }
+                else if (isOverdue)
+                {
+                    <span class="badge text-bg-danger ms-1">Overdue</span>
+                }
+
+                <button type="button" class="btn btn-sm btn-outline-secondary ms-2"
+                        disabled="@isBusy"
+                        @onclick="() => SetCompletionAsync(item, !item.Completed)">
+                    @(item.Completed ? "Mark incomplete" : "Mark complete")
+                </button>
 
                 <button type="button" class="btn btn-sm btn-outline-primary ms-2"
                         disabled="@isBusy" @onclick="() => StartEdit(item)">
@@ -137,6 +164,18 @@ else
     private int? pendingDeleteId;
     private string formMessage = "";
     private bool isBusy;
+    private AssignmentSort assignmentSort;
+
+    private enum AssignmentSort
+    {
+        DueDate,
+        Priority
+    }
+
+    // Preserves due date order of assignments with the same priority
+    private IEnumerable<Assignment> SortedAssignments => assignmentSort == AssignmentSort.Priority
+        ? savedAssignments.OrderBy(item => item.Priority)
+        : savedAssignments;
 
     private sealed class AssignmentDraft
     {
@@ -272,6 +311,46 @@ else
         catch (DbUpdateException)
         {
             formMessage = "The assignment couldn't be saved. Check the course and try again.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SetCompletionAsync(Assignment item, bool completed)
+    {
+        if (isBusy)
+            return;
+
+        isBusy = true;
+        formMessage = "";
+
+        try
+        {
+            var userId = await CurrentUser.GetRequiredUserIdAsync();
+
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var updated = await db.Assignments
+                .Where(assignment => assignment.Id == item.Id && assignment.UserId == userId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(assignment => assignment.Completed, completed));
+
+            if (updated == 0)
+            {
+                formMessage = "This assignment is no longer available. Refresh the page.";
+                return;
+            }
+
+            item.Completed = completed;
+            formMessage = completed
+                ? $"Marked “{item.Title}” complete."
+                : $"Marked “{item.Title}” incomplete.";
+        }
+        catch (DbException)
+        {
+            formMessage = "The assignment status couldn't be saved. Please try again.";
         }
         finally
         {
