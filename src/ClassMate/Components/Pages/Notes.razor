@@ -1,0 +1,264 @@
+@page "/notes"
+@page "/courses/{CourseId:int}/notes"
+@using System.Security.Claims
+@using ClassMate.Data
+@using ClassMate.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Components.Authorization
+@using ClassMate.Components.Notes
+@inject AuthenticationStateProvider AuthStateProvider
+@inject CourseService CourseService
+@inject NoteService NoteService
+
+
+<PageTitle>My Notes</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h1>My Notes</h1>
+    </div>
+    <button type="button"
+            class="btn btn-primary rounded-circle"
+            style="width: 44px; height: 44px;"
+            title="@(showForm ? "Cancel" : "Add Note")"
+            aria-label="@(showForm ? "Cancel" : "Add Note")"
+            @onclick="ToggleForm">
+        @(showForm ? "×" : "+")
+    </button>
+</div>
+
+<div class="mb-3">
+    <label for="course-filter" class="form-label">
+        Filter by Course
+    </label>
+
+    <select id="course-filter"
+            class="form-select"
+            @bind="selectedCourseId">
+
+        <option value="0">All Courses</option>
+
+        @foreach (var course in courses)
+        {
+            <option value="@course.Id">@course.Name</option>
+        }
+    </select>
+</div>
+
+
+@if (showForm)
+{
+   <NoteForm NewNote="newNote" Courses="courses" OnSave="Save" IsEditing="editingNoteId.HasValue"/>
+   @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger mt-2">
+            @errorMessage
+        </div>
+    }
+}
+
+@if (!string.IsNullOrEmpty(deleteError))
+{
+    @*this makes it possible to display errors*@
+    <p class="text-danger" role="alert">@deleteError</p>
+}
+
+@foreach (var note in notes.Where(n => selectedCourseId == 0 || n.CourseId == selectedCourseId))
+{
+    var course = courses.FirstOrDefault(c => c.Id == note.CourseId);
+
+    <NoteCard Note="note" 
+    OnEdit="EditNote" 
+    CourseName="@(course?.Name ?? "Unknown Course")" 
+    CourseColor="@(course?.Color ?? "#6c757d")"
+    IsDeletePending="@(pendingDeleteId == note.Id)"
+    OnDeleteRequested="AskToDelete"
+    OnDeleteConfirmed="DeleteNote"
+    OnDeleteCanceled="CancelDelete"
+    />
+}
+
+@code{
+    [Parameter]
+    public int? CourseId { get; set; }      
+    private bool showForm = false;
+    private Note newNote = new();
+    private string errorMessage = "";
+    private List<Course> courses = new();
+    private int? editingNoteId = null;
+    private List<Note> notes = new();
+    
+    private int? pendingDeleteId = null;
+    private string deleteError = "";
+    private int selectedCourseId = 0;
+
+
+    private void ToggleForm()
+    {
+        if(showForm)
+        {
+            showForm = false;
+            ResetForm();
+        }
+        else
+        {
+            ResetForm();
+            showForm = true;
+        }
+    }
+
+    private void ResetForm()
+    {
+        newNote = new Note();
+        editingNoteId = null;
+        errorMessage = "";
+    }
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCourses();
+        await LoadNotes();
+    }
+    private async Task LoadCourses()
+    {
+        var userId = await GetUserIdAsync();
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            courses = new();
+            return;
+        }
+
+        courses = await CourseService.GetCoursesAsync(userId);
+    }
+
+    private async Task LoadNotes()
+    {
+        var userId = await GetUserIdAsync();
+        if (string.IsNullOrEmpty(userId))
+        {
+            notes = new List<Note>();
+            return;
+        }
+
+        notes = await NoteService.GetNotesAsync(userId);
+    }
+
+    // Verify the current student
+    private async Task<string?> GetUserIdAsync()
+    {
+        var state = await AuthStateProvider
+            .GetAuthenticationStateAsync();
+
+        return state.User.FindFirstValue(
+            ClaimTypes.NameIdentifier);
+    }
+
+
+    private async Task Save()
+    {
+        errorMessage = "";
+        if (string.IsNullOrWhiteSpace(newNote.Title)){
+            errorMessage = "Please enter note title.";
+            return;
+        }
+        if (newNote.CourseId <= 0)
+        {
+            errorMessage = "Please select a course.";
+            return;
+        }
+        
+        var userId = await GetUserIdAsync();
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            errorMessage = "Please log in.";
+            return;
+        }
+
+        bool saved = await NoteService.SaveNoteAsync(
+            userId, newNote, editingNoteId);
+
+        if (!saved)
+        {
+            errorMessage = "Unable to save. Please make sure you're logged in. Note title and course selection are required to save note.";
+            return;
+        }
+
+        ResetForm();
+        showForm = false;
+        await LoadNotes();
+    
+    }
+
+    private void EditNote(Note note)
+    {
+        editingNoteId = note.Id;
+
+        newNote = new Note
+        {
+            Title = note.Title,
+            Content = note.Content,
+            CourseId = note.CourseId
+        };
+
+        errorMessage = "";
+        showForm = true;
+    }
+
+
+    // DELETE
+    private void AskToDelete(int noteId)
+    {
+        pendingDeleteId = noteId;
+        deleteError = "";
+    }
+
+    private void CancelDelete()
+    {
+        pendingDeleteId = null;
+        deleteError = "";
+    }
+
+    private async Task DeleteNote(int noteId)
+    {
+        if (pendingDeleteId != noteId)
+            return;
+
+        var userId = await GetUserIdAsync();
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            deleteError = "Please log in.";
+            return;
+        }
+
+        bool deleted = await NoteService.DeleteNoteAsync(
+            noteId, userId);
+
+        if (!deleted)
+        {
+            deleteError = "Unable to delete note.";
+            return;
+        }
+
+        pendingDeleteId = null;
+        deleteError = "";
+
+        if (editingNoteId == noteId)
+        {
+            ResetForm();
+            showForm = false;
+        }
+
+        await LoadNotes();
+    }
+
+    protected override void OnParametersSet()
+    {
+        selectedCourseId = CourseId ?? 0;
+    }
+
+
+}
+

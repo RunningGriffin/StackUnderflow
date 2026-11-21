@@ -1,0 +1,105 @@
+ @using ClassMate.Data
+    
+    
+<div class="card p-3 mb-2" style="border-left: 6px solid @CourseColor;">
+    
+    <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+        <h5 class="mb-0">@Note.Title</h5>
+
+        <span class="badge rounded-pill bg-light text-dark border">
+            @CourseName
+        </span>
+    </div>
+
+    <p style="white-space: pre-wrap; overflow-wrap: anywhere;">
+        @(isExpanded ? Note.Content : GetPreview(Note.Content))
+    </p>
+    <div class="d-flex flex-row gap-2">
+        @if (Note.Content.Length > 100)
+        {
+            <button type="button"
+                    class="btn btn-outline-primary mb-2"
+                    @onclick="ToggleExpanded">
+                @(isExpanded ? "Close Note" : "View Note")
+            </button>
+        }
+
+        <button type="button"
+                class="btn btn-outline-primary mb-2"
+                @onclick="() => OnEdit.InvokeAsync(Note)">
+            Edit
+        </button>
+        <button type="button"
+            class="btn btn-outline-danger mb-2 ms-auto"
+            @onclick="() => OnDeleteRequested.InvokeAsync(Note.Id)">
+            Delete
+        </button>
+    </div>
+
+    @if (IsDeletePending)
+    {
+        <div class="alert alert-warning mt-3">
+            <p>
+                Are you sure you want to delete
+                <strong>@Note.Title</strong>?
+            </p>
+
+            <button type="button"
+                    class="btn btn-danger me-2 "
+                    @onclick="() => OnDeleteConfirmed.InvokeAsync(Note.Id)">
+                Yes, Delete
+            </button>
+
+            <button type="button"
+                    class="btn btn-secondary"
+                    @onclick="() => OnDeleteCanceled.InvokeAsync()">
+                Cancel
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public Note Note {get; set;} = new();
+    
+    [Parameter]
+    public EventCallback<Note> OnEdit { get; set; }
+    
+    [Parameter]
+    public string CourseName {get; set;} = "";
+
+    [Parameter]
+    public string CourseColor {get; set;} = "#6c757d";
+
+    [Parameter]
+    public bool IsDeletePending { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnDeleteRequested { get; set; }
+    
+    [Parameter]
+    public EventCallback<int> OnDeleteConfirmed { get; set; }
+
+    [Parameter]
+    public EventCallback OnDeleteCanceled { get; set; }
+
+    private bool isExpanded = false;
+    private void ToggleExpanded()
+    {
+        isExpanded = !isExpanded;
+    }
+
+    private string GetPreview(string content)
+    {
+        if (content.Length <= 100)
+        {
+            return content;
+        }
+
+        return content.Substring(0, 100) + "...";
+    }
+
+
+    
+}
