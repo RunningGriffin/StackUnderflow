@@ -60,19 +60,21 @@ and save. The course name is required.
 Students can create, view, edit, and delete assignments for their own courses.
 Each saved assignment shows its title, course, due date, and priority badge.
 
-1. Open **Assignments** from the sidebar.
-2. Select a course, enter a title, and choose a due date. Select **Low**,
-   **Medium**, or **High** priority. New assignments default to **Medium**.
-3. Click **Save Assignment**. To update it later, click **Edit**, then
-   **Save Changes**. Use **Cancel** to discard the edit.
-4. Select **Due date** or **Priority** under **Sort assignments by**. Priority
-   sorts **High**, then **Medium**, then **Low**. Assignments with the same
+1. Open Assignments from the sidebar.
+2. Select a course, enter a title, and choose a due date. If you choose 
+   a date before today for a new assignment, a warning appears below the date.
+   You can still save the assignment, and it will appear as Overdue.
+   Choose Low, Medium, or High priority. The default is Medium.
+3. Click Save Assignment. To update it later, click Edit, then
+   Save Changes. Use Cancel to discard the edit.
+4. Select Due date or Priority under Sort assignments by. Priority
+   sorts High, then Medium, then Low. Assignments with the same
    priority appear in due-date order.
-5. Use **Mark complete** or **Mark incomplete** to save a status change.
+5. Use Mark complete or Mark incomplete to save a status change.
    Incomplete assignments due before today are highlighted and labeled
-   **Overdue**. Completing one clears the highlight and label. Marking it
+   Overdue. Completing one clears the highlight and label. Marking it
    incomplete restores them if the assignment is still overdue.
-6. To remove an assignment, click **Delete**, then **Confirm delete**.
+6. To remove an assignment, click Delete, then Confirm delete.
 
 The course, title, and due date are required. A blank or whitespace-only title
 prevents the assignment from being saved. Students can select only their own
