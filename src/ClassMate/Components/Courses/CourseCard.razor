@@ -24,6 +24,10 @@
                         @onclick="() => OnRestore.InvokeAsync(Course.Id)">
                     Restore
                 </button>
+                <a class="btn btn-outline-primary btn-sm"
+                href="@($"/courses/{Course.Id}/notes")">
+                    View Notes
+                </a>
             </div>
         }
         else
@@ -45,16 +49,25 @@
                         @onclick="() => OnDeleteRequested.InvokeAsync(Course.Id)">
                     Delete
                 </button>
-
-                <button type="button"
-                        class="btn btn-outline-secondary btn-sm"
-                        @onclick="() => OnArchive.InvokeAsync(Course.Id)">
-                    Archive
-                </button>
-
             </div>
         }
     </div>
+
+    @if (!Course.IsArchived)
+    {
+        <div class="d-flex justify-content-between align-items-center mt-2">
+            <a class="btn btn-outline-primary btn-sm"
+               href="@($"/courses/{Course.Id}/notes")">
+                View Notes
+            </a>
+
+            <button type="button"
+                    class="btn btn-outline-secondary btn-sm"
+                    @onclick="() => OnArchive.InvokeAsync(Course.Id)">
+                Archive
+            </button>
+        </div>
+    }
 
     @if (IsDeletePending && !Course.IsArchived)
     {

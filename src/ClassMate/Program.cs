@@ -18,6 +18,7 @@ builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuth
 builder.Services.AddScoped<CurrentUser>();
 
 builder.Services.AddScoped<ClassMate.Services.CourseService>();
+builder.Services.AddScoped<ClassMate.Services.NoteService>();
 
 
 builder.Services.AddAuthentication(options =>

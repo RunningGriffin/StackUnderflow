@@ -1,0 +1,64 @@
+@using ClassMate.Data
+
+ @* Note form goes here if someone clicks + *@
+    <div class="card p-3 mb-3">
+        <h3>@(IsEditing ? "Edit Note" : "New Note")</h3>
+
+        <div class="mb-3">
+            <label for="note-title" class="form-label">
+                Note Title
+            </label>
+
+            <input id="note-title"
+                   class="form-control"
+                   placeholder="Enter a note title"
+                   @bind="NewNote.Title"/>
+        </div>
+
+        <div class="mb-3">
+            <label for="note-content" class="form-label">
+                Note Content
+            </label>
+            <textarea id="note-content"
+                class="form-control"
+                rows="10"
+                placeholder="Enter your notes...."
+                @bind="NewNote.Content">
+            </textarea>
+        </div>
+
+        <div class="mb-3">
+            <label for="note-course" class='form-label'>
+                Course
+            </label>
+            <select id="note-course" 
+                class="form-select"
+                @bind="NewNote.CourseId">
+                <option value="0">Select a Course</option>
+                @foreach(var course in Courses)
+                {
+                    <option value="@course.Id">@course.Name</option>
+                }
+            </select>
+        </div>
+        <button type="button" 
+            class="btn btn-primary"
+            @onclick="OnSave">
+            @(IsEditing ? "Save Changes" : "Save Note")
+        </button>
+    </div>
+
+
+@code {
+    [Parameter]
+    public Note NewNote { get; set; } = new();
+
+    [Parameter]
+    public List<Course> Courses { get; set; } = new();
+
+    [Parameter]
+    public EventCallback OnSave { get; set; }
+
+    [Parameter]
+    public bool IsEditing {get; set; }
+}

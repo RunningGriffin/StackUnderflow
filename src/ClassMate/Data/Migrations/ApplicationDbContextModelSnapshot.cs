@@ -182,6 +182,9 @@ namespace ClassMate.Data.Migrations
                     b.Property<int>("CourseId")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("text");

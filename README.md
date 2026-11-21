@@ -22,11 +22,10 @@
 
 - dotnet ef database update
 
-<<<<<<< Updated upstream
-#### Features
+### Features
  1. Course Management: Allows user to add, view, edit, delete, and archive their courses.
 
-***All of these are only available while user is logged in****
+    Notes: All of these are only available while user is logged in
 
     Features: 
     -Add Courses: Add course title, professor, course code, choose the course color, year, and semester.
@@ -46,11 +45,28 @@
     -Course Name: Required
     -Course Management: Checks to see if user is logged in.
 
+2. Note Management: Allows user to add, view, edit, and delete their notes. It allows user to filter notes by course and be able to access notes in the course page. 
 
-=======
-## Deployment (Azure App Service + Neon)
+   Notes: All of these are only available while user is logged in
 
-- The app is deployed to Azure App Service; the database is Neon PostgreSQL.
-- Every push to `main` deploys via `.github/workflows/deploy-azure.yml`.
-- One-time Azure setup: `az login`, `gh auth login`, then `bash scripts/azure-setup.sh`.
->>>>>>> Stashed changes
+    Features: 
+    -Add Note: Add note title, content, and select related course.
+    -View Notes: View notes already added. Expand note to see notes longer than 100 characters. Notes are available to view when in course tab.
+    -Filter Notes: Filter notes by course.
+    -Edit Notes: Be able to edit any note. User can change any of the features (ex:title, content, course)
+    -Delete Notes: Delete any note that is created. 
+
+    How to Use: 
+    1.Navigate to Notes page.
+    2.Select the option to add new note (circle with "+")
+    3.Enter note information and push save.
+    4.View the course below.
+    5.Use the available edit, or delete buttons to manage created notes.
+
+    Validation:
+    -Note Title: Required
+    -Note Course Selection: Required
+    -Note Management: Checks to see if user is logged in.
+
+
+
