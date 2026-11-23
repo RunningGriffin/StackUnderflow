@@ -1,0 +1,477 @@
+@page "/goals"
+@using System.ComponentModel.DataAnnotations
+@using System.Data.Common
+@using System.Globalization
+@using ClassMate.Data
+@using Microsoft.EntityFrameworkCore
+@implements IAsyncDisposable
+@inject IServiceScopeFactory ScopeFactory
+@inject ClassMate.Services.CurrentUser CurrentUser
+@inject IJSRuntime JS
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>Weekly Study Goals</PageTitle>
+
+<h1>Weekly Study Goals</h1>
+
+@if (!isLoaded)
+{
+    <p>Loading…</p>
+}
+else
+{
+    @* ---------- This week's progress ---------- *@
+    <section class="mb-4" aria-labelledby="progress-heading">
+        <h2 id="progress-heading" class="h4">This Week</h2>
+        <p class="text-body-secondary mb-2">
+            @WeekStart.ToString("ddd, MMM d") – @WeekStart.AddDays(6).ToString("ddd, MMM d, yyyy")
+        </p>
+
+        @if (weeklyGoal <= 0)
+        {
+            <p>Set a weekly goal below to start tracking your progress.</p>
+        }
+        else
+        {
+            <div class="progress mb-2" role="progressbar" style="height: 1.75rem;"
+                 aria-label="Hours logged this week compared with your weekly goal"
+                 aria-valuenow="@ProgressPercent" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar @(GoalMet ? "bg-success" : "")"
+                     style="width: @(Math.Min(ProgressPercent, 100))%;">
+                    @ProgressPercent%
+                </div>
+            </div>
+
+            <p class="mb-1">
+                <strong>@FormatHours(HoursThisWeek)</strong> of @FormatHours(weeklyGoal) logged.
+                @if (GoalMet)
+                {
+                    <span class="badge text-bg-success ms-1">Goal reached!</span>
+                }
+                else
+                {
+                    <span>@FormatHours(weeklyGoal - HoursThisWeek) to go.</span>
+                }
+            </p>
+        }
+
+        <p class="text-body-secondary small mb-0">
+            Last week: @FormatHours(HoursLastWeek) logged. Progress starts over every Monday.
+        </p>
+    </section>
+
+    @* ---------- Weekly target ---------- *@
+    <section class="mb-4" aria-labelledby="goal-heading">
+        <h2 id="goal-heading" class="h4">Weekly Goal</h2>
+
+        <EditForm Model="goalDraft" OnValidSubmit="SaveGoalAsync">
+            <DataAnnotationsValidator />
+
+            <fieldset disabled="@isBusy">
+                <label for="weekly-goal" class="form-label">Study hours per week</label>
+                <div class="d-flex gap-2 align-items-start">
+                    <InputNumber TValue="double?" id="weekly-goal" class="form-control w-auto"
+                                 min="0.5" max="168" step="0.5"
+                                 @bind-Value="goalDraft.Hours" />
+                    <button type="submit" class="btn btn-primary">
+                        @(weeklyGoal > 0 ? "Update Goal" : "Set Goal")
+                    </button>
+                </div>
+                <ValidationMessage For="() => goalDraft.Hours" class="text-danger" />
+            </fieldset>
+
+            @if (!string.IsNullOrEmpty(goalMessage))
+            {
+                <p class="mt-2" role="status">@goalMessage</p>
+            }
+        </EditForm>
+    </section>
+
+    @* ---------- Log hours ---------- *@
+    <section class="mb-4" aria-labelledby="log-heading">
+        <h2 id="log-heading" class="h4">Log Study Hours</h2>
+
+        <EditForm Model="logDraft" OnValidSubmit="SaveLogAsync">
+            <DataAnnotationsValidator />
+
+            <fieldset disabled="@isBusy">
+                <div class="row g-3">
+                    <div class="col-sm-4">
+                        <label for="log-date" class="form-label">Date</label>
+                        <InputDate TValue="DateOnly?" id="log-date" class="form-control"
+                                   max="@TodayForPicker"
+                                   @bind-Value="logDraft.Date" />
+                        <ValidationMessage For="() => logDraft.Date" class="text-danger" />
+                    </div>
+
+                    <div class="col-sm-4">
+                        <label for="log-hours" class="form-label">Hours</label>
+                        <InputNumber TValue="double?" id="log-hours" class="form-control"
+                                     min="0.25" max="24" step="0.25"
+                                     @bind-Value="logDraft.Hours" />
+                        <ValidationMessage For="() => logDraft.Hours" class="text-danger" />
+                    </div>
+
+                    <div class="col-sm-4 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary">Log Hours</button>
+                    </div>
+                </div>
+            </fieldset>
+
+            @if (!string.IsNullOrEmpty(logMessage))
+            {
+                <p class="mt-2" role="status">@logMessage</p>
+            }
+        </EditForm>
+    </section>
+
+    @* ---------- This week's entries ---------- *@
+    <section aria-labelledby="entries-heading">
+        <h2 id="entries-heading" class="h4">This Week's Entries</h2>
+
+        @if (LogsThisWeek.Count == 0)
+        {
+            <p>No hours logged this week yet.</p>
+        }
+        else
+        {
+            <ul class="list-group">
+                @foreach (var log in LogsThisWeek)
+                {
+                    <li class="list-group-item d-flex flex-wrap align-items-center gap-2" @key="log.Id">
+                        <span class="me-auto">
+                            <strong>@log.DateOfLog.ToString("ddd, MMM d")</strong> · @FormatHours(log.Hours)
+                        </span>
+
+                        @if (pendingDeleteId == log.Id)
+                        {
+                            <span>Delete this entry?</span>
+                            <button type="button" class="btn btn-sm btn-danger"
+                                    disabled="@isBusy" @onclick="() => DeleteLogAsync(log)">
+                                Confirm delete
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    disabled="@isBusy" @onclick="() => pendingDeleteId = null">
+                                Cancel
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-danger"
+                                    disabled="@isBusy" @onclick="() => pendingDeleteId = log.Id">
+                                Delete
+                            </button>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+}
+
+@code {
+    // Weeks run Monday–Sunday. Change this to DayOfWeek.Sunday for Sunday–Saturday weeks.
+    private const DayOfWeek FirstDayOfWeek = DayOfWeek.Monday;
+    private const double MaxHoursPerDay = 24;
+
+    private double weeklyGoal;
+    private List<StudyLog> recentLogs = new();   // the last few weeks of entries
+    private GoalDraft goalDraft = new();
+    private LogDraft logDraft = new();
+    private int? pendingDeleteId;
+    private string goalMessage = "";
+    private string logMessage = "";
+    private bool isBusy;
+    private bool isLoaded;
+
+    // The server may run in UTC (Azure), so "today" is worked out in the
+    // student's own time zone, which the browser reports after the first render.
+    private TimeZoneInfo userTimeZone = TimeZoneInfo.Local;
+    private IJSObjectReference? jsModule;
+
+    private DateOnly Today =>
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, userTimeZone));
+
+    // Greys out future days in the date picker.
+    private string TodayForPicker => Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private DateOnly WeekStart => StartOfWeek(Today);
+
+    private List<StudyLog> LogsThisWeek =>
+        recentLogs.Where(log => IsInWeek(log, WeekStart))
+                  .OrderByDescending(log => log.DateOfLog)
+                  .ThenByDescending(log => log.Id)
+                  .ToList();
+
+    // Progress "resets" each week because only this week's logs are counted.
+    private double HoursThisWeek => LogsThisWeek.Sum(log => log.Hours);
+
+    private double HoursLastWeek =>
+        recentLogs.Where(log => IsInWeek(log, WeekStart.AddDays(-7))).Sum(log => log.Hours);
+
+    private int ProgressPercent =>
+        weeklyGoal <= 0 ? 0 : (int)Math.Round(HoursThisWeek / weeklyGoal * 100);
+
+    private bool GoalMet => weeklyGoal > 0 && HoursThisWeek >= weeklyGoal;
+
+    private sealed class GoalDraft
+    {
+        [Required(ErrorMessage = "Enter your weekly goal in hours.")]
+        [Range(0.5, 168, ErrorMessage = "The weekly goal must be between 0.5 and 168 hours.")]
+        public double? Hours { get; set; }
+    }
+
+    private sealed class LogDraft
+    {
+        [Required(ErrorMessage = "Choose the date you studied.")]
+        public DateOnly? Date { get; set; }
+
+        [Required(ErrorMessage = "Enter the hours you studied.")]
+        [Range(0.25, MaxHoursPerDay, ErrorMessage = "Hours must be between 0.25 and 24.")]
+        public double? Hours { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        logDraft = new LogDraft { Date = Today };
+        isLoaded = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            jsModule = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./Components/Pages/Goals.razor.js");
+            var timeZoneId = await jsModule.InvokeAsync<string>("getTimeZone");
+
+            if (TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId, out var timeZone))
+            {
+                var oldToday = Today;
+                userTimeZone = timeZone;
+
+                // If the server's "today" differs from the student's, the week
+                // might too, so reload and move the default log date.
+                if (Today != oldToday)
+                {
+                    if (logDraft.Date == oldToday)
+                        logDraft.Date = Today;
+
+                    await LoadAsync();
+                }
+
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+            // Keep the server's time zone if the browser can't report one.
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        var userId = await CurrentUser.GetRequiredUserIdAsync();
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        weeklyGoal = await db.UsersSettings
+            .Where(settings => settings.UserId == userId)
+            .Select(settings => settings.HourWeeklyTimeGoal)
+            .FirstOrDefaultAsync();
+
+        goalDraft = new GoalDraft { Hours = weeklyGoal > 0 ? weeklyGoal : null };
+        recentLogs = await LoadRecentLogsAsync(db, userId);
+    }
+
+    private Task<List<StudyLog>> LoadRecentLogsAsync(ApplicationDbContext db, string userId)
+    {
+        // Two weeks back covers last week even if the time zone shifts the week.
+        var from = WeekStart.AddDays(-14).ToDateTime(TimeOnly.MinValue);
+
+        return db.StudyLogs
+            .AsNoTracking()
+            .Where(log => log.UserId == userId && log.DateOfLog >= from)
+            .ToListAsync();
+    }
+
+    private static DateOnly StartOfWeek(DateOnly date)
+    {
+        var daysSinceStart = ((int)date.DayOfWeek - (int)FirstDayOfWeek + 7) % 7;
+        return date.AddDays(-daysSinceStart);
+    }
+
+    private static bool IsInWeek(StudyLog log, DateOnly weekStart)
+    {
+        var day = DateOnly.FromDateTime(log.DateOfLog);
+        return day >= weekStart && day < weekStart.AddDays(7);
+    }
+
+    private static string FormatHours(double hours)
+    {
+        var rounded = Math.Round(hours, 2);
+        return $"{rounded:0.##} {(rounded == 1 ? "hour" : "hours")}";
+    }
+
+    private async Task SaveGoalAsync()
+    {
+        if (isBusy || goalDraft.Hours is not double hours)
+            return;
+
+        isBusy = true;
+        goalMessage = "";
+
+        try
+        {
+            var userId = await CurrentUser.GetRequiredUserIdAsync();
+
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var settings = await db.UsersSettings
+                .SingleOrDefaultAsync(item => item.UserId == userId);
+
+            // Accounts created before sign up started adding a settings row won't have one.
+            if (settings is null)
+            {
+                settings = new UserSettings { UserId = userId };
+                db.UsersSettings.Add(settings);
+            }
+
+            settings.HourWeeklyTimeGoal = hours;
+            await db.SaveChangesAsync();
+
+            weeklyGoal = hours;
+            goalMessage = $"Your weekly goal is now {FormatHours(hours)}.";
+        }
+        catch (DbUpdateException)
+        {
+            goalMessage = "Your goal couldn't be saved. Please try again.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SaveLogAsync()
+    {
+        if (isBusy || logDraft.Date is not DateOnly date || logDraft.Hours is not double hours)
+            return;
+
+        // Enforced here as well as in the date picker, so it can't be bypassed.
+        if (date > Today)
+        {
+            logMessage = "You can't log hours for a future date.";
+            return;
+        }
+
+        isBusy = true;
+        logMessage = "";
+
+        try
+        {
+            var userId = await CurrentUser.GetRequiredUserIdAsync();
+
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var dayStart = date.ToDateTime(TimeOnly.MinValue);
+            var dayEnd = dayStart.AddDays(1);
+
+            var alreadyLogged = await db.StudyLogs
+                .Where(log => log.UserId == userId &&
+                              log.DateOfLog >= dayStart && log.DateOfLog < dayEnd)
+                .SumAsync(log => log.Hours);
+
+            if (alreadyLogged + hours > MaxHoursPerDay)
+            {
+                logMessage = $"You've already logged {FormatHours(alreadyLogged)} on " +
+                             $"{date:ddd, MMM d}. A day can't have more than 24 hours.";
+                return;
+            }
+
+            db.StudyLogs.Add(new StudyLog
+            {
+                UserId = userId,
+                DateOfLog = dayStart,
+                Hours = hours
+            });
+
+            await db.SaveChangesAsync();
+
+            logMessage = $"Logged {FormatHours(hours)} on {date:ddd, MMM d}.";
+            logDraft = new LogDraft { Date = Today };
+            recentLogs = await LoadRecentLogsAsync(db, userId);
+
+            if (date < WeekStart)
+                logMessage += " That date is before this week, so it doesn't count toward this week's progress.";
+        }
+        catch (DbUpdateException)
+        {
+            logMessage = "Your hours couldn't be logged. Please try again.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task DeleteLogAsync(StudyLog log)
+    {
+        if (isBusy || pendingDeleteId != log.Id)
+            return;
+
+        isBusy = true;
+
+        try
+        {
+            var userId = await CurrentUser.GetRequiredUserIdAsync();
+
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var deleted = await db.StudyLogs
+                .Where(item => item.Id == log.Id && item.UserId == userId)
+                .ExecuteDeleteAsync();
+
+            pendingDeleteId = null;
+            recentLogs.Remove(log);
+
+            logMessage = deleted == 1
+                ? $"Deleted {FormatHours(log.Hours)} from {log.DateOfLog:ddd, MMM d}."
+                : "This entry is no longer available.";
+        }
+        catch (DbException)
+        {
+            logMessage = "The entry couldn't be deleted. Please try again.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (jsModule is not null)
+        {
+            try
+            {
+                await jsModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+}
