@@ -104,6 +104,24 @@ not the server's, since Azure runs in UTC. `StudySession.StartTime` stores the
 local start time the student entered, which the calendar and reminders can use
 as is.
 
+### Weekly Study Goals
+
+Students can set a weekly study-hours goal and log the hours they study.
+
+1. Open **Study Goals** from the sidebar.
+2. Under **Weekly Goal**, enter how many hours you want to study each week
+   (0.5 to 168) and click **Set Goal**. Change it any time with **Update Goal**.
+3. Under **Log Study Hours**, choose the date you studied and the number of
+   hours (0.25 to 24), then click **Log Hours**. Future dates can't be logged,
+   and one day can't add up to more than 24 hours.
+4. The progress bar under **This Week** shows hours logged compared with your
+   goal for the current week (Monday to Sunday). It turns green when you reach
+   the goal.
+5. Progress starts over each Monday, because only the current week's entries
+   count. Last week's total is shown under the bar.
+6. To remove a mistake, click **Delete** next to an entry under
+   **This Week's Entries**, then **Confirm delete**.
+
 ## Deployment
 
 ClassMate uses Azure App Service for hosting and Neon PostgreSQL for its
