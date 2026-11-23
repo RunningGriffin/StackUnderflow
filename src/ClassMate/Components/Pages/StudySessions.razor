@@ -1,0 +1,520 @@
+@page "/study-sessions"
+@using System.ComponentModel.DataAnnotations
+@using System.Data.Common
+@using ClassMate.Data
+@using Microsoft.EntityFrameworkCore
+@implements IAsyncDisposable
+@inject IServiceScopeFactory ScopeFactory
+@inject ClassMate.Services.CurrentUser CurrentUser
+@inject IJSRuntime JS
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+
+<PageTitle>Study Sessions</PageTitle>
+
+<h1>Study Sessions</h1>
+
+@if (!isLoaded)
+{
+    <p>Loading…</p>
+}
+else if (courses.Count == 0)
+{
+    <p>
+        You need a course before you can schedule a study session.
+        <a href="courses">Add a course</a> first.
+    </p>
+}
+else
+{
+    <h2 class="h4">@(draft.IsNew ? "Schedule a Study Session" : "Edit Study Session")</h2>
+
+    <EditForm Model="draft" OnValidSubmit="SaveSessionAsync">
+        <DataAnnotationsValidator />
+
+        <fieldset disabled="@isBusy">
+            <div class="mb-3">
+                <label for="session-course" class="form-label">Course</label>
+                <InputSelect TValue="int" id="session-course" class="form-select"
+                             @bind-Value="draft.CourseId">
+                    <option value="0">Select a course</option>
+                    @foreach (var course in SelectableCourses)
+                    {
+                        <option value="@course.Id">@(course.IsArchived ? $"{course.Name} (archived)" : course.Name)</option>
+                    }
+                </InputSelect>
+                <ValidationMessage For="() => draft.CourseId" class="text-danger" />
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-sm-4">
+                    <label for="session-date" class="form-label">Date</label>
+                    <InputDate TValue="DateOnly?" id="session-date" class="form-control"
+                               min="@MinDateForPicker"
+                               @bind-Value="draft.Date" />
+                    <ValidationMessage For="() => draft.Date" class="text-danger" />
+                </div>
+
+                <div class="col-sm-4">
+                    <label for="session-start" class="form-label">Start time</label>
+                    <InputDate TValue="TimeOnly?" Type="InputDateType.Time" id="session-start"
+                               class="form-control"
+                               @bind-Value="draft.StartTime" />
+                    <ValidationMessage For="() => draft.StartTime" class="text-danger" />
+                </div>
+
+                <div class="col-sm-4">
+                    <label for="session-duration" class="form-label">Duration (minutes)</label>
+                    <InputNumber TValue="int?" id="session-duration" class="form-control"
+                                 min="@MinDurationMinutes" max="@MaxDurationMinutes" step="5"
+                                 @bind-Value="draft.DurationMinutes" />
+                    <ValidationMessage For="() => draft.DurationMinutes" class="text-danger" />
+                </div>
+            </div>
+
+            @if (DraftIsInPast)
+            {
+                <p class="text-danger" role="alert">
+                    Study sessions can't be scheduled in the past. Choose a start time after
+                    @NowLocal.ToString("h:mm tt") today or a later date.
+                </p>
+            }
+            else if (draft.StartsAt is DateTime startsAt && draft.DurationMinutes is int minutes && minutes > 0)
+            {
+                <p class="form-text">
+                    @startsAt.ToString("dddd, MMM d") ·
+                    @startsAt.ToString("h:mm tt") – @startsAt.AddMinutes(minutes).ToString("h:mm tt")
+                    (@FormatDuration(minutes))
+                </p>
+            }
+
+            <div class="mt-3">
+                <button type="submit" class="btn btn-primary">
+                    @(draft.IsNew ? "Schedule Session" : "Save Changes")
+                </button>
+
+                @if (!draft.IsNew)
+                {
+                    <button type="button" class="btn btn-outline-secondary ms-2"
+                            @onclick="CancelEdit">
+                        Cancel
+                    </button>
+                }
+            </div>
+        </fieldset>
+
+        @if (!string.IsNullOrEmpty(formMessage))
+        {
+            <p class="mt-2" role="status">@formMessage</p>
+        }
+    </EditForm>
+
+    <h2 class="h4 mt-4">Upcoming Sessions</h2>
+
+    @if (UpcomingSessions.Count == 0)
+    {
+        <p>No upcoming study sessions. Schedule one above.</p>
+    }
+    else
+    {
+        <ul class="list-group">
+            @foreach (var session in UpcomingSessions)
+            {
+                @SessionRow(session, isPast: false)
+            }
+        </ul>
+    }
+
+    @if (PastSessions.Count > 0)
+    {
+        <h2 class="h4 mt-4">Past Sessions</h2>
+
+        <ul class="list-group">
+            @foreach (var session in PastSessions)
+            {
+                @SessionRow(session, isPast: true)
+            }
+        </ul>
+    }
+}
+
+@code {
+    private const int MinDurationMinutes = 5;
+    private const int MaxDurationMinutes = 720;
+
+    private SessionDraft draft = new();
+    private List<Course> courses = new();
+    private List<StudySession> sessions = new();
+    private int? pendingDeleteId;
+    private string formMessage = "";
+    private bool isBusy;
+    private bool isLoaded;
+
+    // The server may run in UTC (Azure), so "now" and "today" are worked out in
+    // the student's own time zone, which the browser reports after the first render.
+    private TimeZoneInfo userTimeZone = TimeZoneInfo.Local;
+    private IJSObjectReference? jsModule;
+
+    private DateTime NowLocal =>
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, userTimeZone);
+
+    // Greys out past days in the date picker for new sessions (null = no limit).
+    private string? MinDateForPicker =>
+        draft.IsNew ? NowLocal.ToString("yyyy-MM-dd") : null;
+
+    // Archived courses are hidden for new sessions, but a session that already
+    // belongs to an archived course can still be edited.
+    private IEnumerable<Course> SelectableCourses =>
+        courses.Where(course => !course.IsArchived || course.Id == draft.CourseId);
+
+    private List<StudySession> UpcomingSessions =>
+        sessions.Where(session => EndOf(session) > NowLocal)
+                .OrderBy(session => session.StartTime)
+                .ToList();
+
+    private List<StudySession> PastSessions =>
+        sessions.Where(session => EndOf(session) <= NowLocal)
+                .OrderByDescending(session => session.StartTime)
+                .ToList();
+
+    // New sessions can't start in the past. An existing session can be edited
+    // (for example its duration) as long as its start isn't moved into the past.
+    private bool DraftIsInPast =>
+        draft.StartsAt is DateTime startsAt &&
+        startsAt <= NowLocal &&
+        (draft.IsNew || startsAt != draft.OriginalStart);
+
+    private sealed class SessionDraft
+    {
+        public int Id { get; set; }
+
+        public bool IsNew => Id == 0;
+
+        public DateTime? OriginalStart { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Choose a course.")]
+        public int CourseId { get; set; }
+
+        [Required(ErrorMessage = "Choose a date.")]
+        public DateOnly? Date { get; set; }
+
+        [Required(ErrorMessage = "Choose a start time.")]
+        public TimeOnly? StartTime { get; set; }
+
+        [Required(ErrorMessage = "Enter a duration.")]
+        [Range(MinDurationMinutes, MaxDurationMinutes,
+            ErrorMessage = "Duration must be between 5 and 720 minutes (12 hours).")]
+        public int? DurationMinutes { get; set; } = 60;
+
+        public DateTime? StartsAt =>
+            Date is DateOnly date && StartTime is TimeOnly time
+                ? date.ToDateTime(time)
+                : null;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var userId = await CurrentUser.GetRequiredUserIdAsync();
+
+        using var scope = ScopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        courses = await db.Courses
+            .AsNoTracking()
+            .Where(course => course.UserId == userId)
+            .OrderBy(course => course.Name)
+            .ToListAsync();
+
+        sessions = await LoadSessionsAsync(db, userId);
+        draft = NewDraft();
+        isLoaded = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            jsModule = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./Components/Pages/StudySessions.razor.js");
+            var timeZoneId = await jsModule.InvokeAsync<string>("getTimeZone");
+
+            if (TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId, out var timeZone))
+            {
+                var defaultsUntouched = draft.IsNew &&
+                    draft.StartsAt == NewDraft().StartsAt;
+
+                userTimeZone = timeZone;
+
+                // Re-pick the suggested start time in the student's own time zone,
+                // unless they've already started filling in the form.
+                if (defaultsUntouched)
+                    draft = NewDraft(draft.CourseId);
+
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+            // Keep the server's time zone if the browser can't report one.
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private SessionDraft NewDraft(int courseId = 0)
+    {
+        // Suggest the next full hour, e.g. 3:20 PM -> 4:00 PM.
+        var now = NowLocal;
+        var suggested = now.Date.AddHours(now.Hour + 1);
+
+        return new SessionDraft
+        {
+            CourseId = courseId,
+            Date = DateOnly.FromDateTime(suggested),
+            StartTime = TimeOnly.FromDateTime(suggested),
+            DurationMinutes = 60
+        };
+    }
+
+    private static Task<List<StudySession>> LoadSessionsAsync(
+        ApplicationDbContext db, string userId)
+    {
+        return db.StudySessions
+            .AsNoTracking()
+            .Include(session => session.Course)
+            .Where(session => session.UserId == userId)
+            .OrderBy(session => session.StartTime)
+            .ThenBy(session => session.Id)
+            .ToListAsync();
+    }
+
+    private static DateTime EndOf(StudySession session) =>
+        session.StartTime.AddMinutes(session.DurationMinutes);
+
+    private static string FormatDuration(int minutes)
+    {
+        var hours = minutes / 60;
+        var rest = minutes % 60;
+
+        return (hours, rest) switch
+        {
+            (0, _) => $"{rest} min",
+            (_, 0) => $"{hours} h",
+            _ => $"{hours} h {rest} min"
+        };
+    }
+
+    private void StartEdit(StudySession session)
+    {
+        pendingDeleteId = null;
+
+        // Keep edits in a draft so Cancel can discard them.
+        draft = new SessionDraft
+        {
+            Id = session.Id,
+            OriginalStart = session.StartTime,
+            CourseId = session.CourseId,
+            Date = DateOnly.FromDateTime(session.StartTime),
+            StartTime = TimeOnly.FromDateTime(session.StartTime),
+            DurationMinutes = session.DurationMinutes
+        };
+
+        formMessage = "";
+    }
+
+    private void CancelEdit()
+    {
+        draft = NewDraft(draft.CourseId);
+        formMessage = "";
+    }
+
+    private async Task SaveSessionAsync()
+    {
+        if (isBusy)
+            return;
+
+        if (draft.StartsAt is not DateTime startsAt ||
+            draft.DurationMinutes is not int durationMinutes)
+            return;
+
+        // Enforced here as well as in the form, so it can't be bypassed.
+        if (DraftIsInPast)
+        {
+            formMessage = "Study sessions can't be scheduled in the past.";
+            return;
+        }
+
+        isBusy = true;
+        formMessage = "";
+
+        try
+        {
+            var userId = await CurrentUser.GetRequiredUserIdAsync();
+
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var ownsCourse = await db.Courses.AnyAsync(course =>
+                course.Id == draft.CourseId && course.UserId == userId);
+
+            if (!ownsCourse)
+            {
+                formMessage = "Choose a course that belongs to your account.";
+                return;
+            }
+
+            StudySession session;
+            var isNew = draft.IsNew;
+
+            if (isNew)
+            {
+                session = new StudySession { UserId = userId };
+                db.StudySessions.Add(session);
+            }
+            else
+            {
+                var existing = await db.StudySessions.SingleOrDefaultAsync(item =>
+                    item.Id == draft.Id && item.UserId == userId);
+
+                if (existing is null)
+                {
+                    formMessage = "This study session is no longer available. Refresh the page.";
+                    return;
+                }
+
+                session = existing;
+            }
+
+            session.CourseId = draft.CourseId;
+            session.StartTime = startsAt;
+            session.DurationMinutes = durationMinutes;
+
+            await db.SaveChangesAsync();
+
+            var courseName = courses.FirstOrDefault(c => c.Id == session.CourseId)?.Name ?? "your course";
+            formMessage = isNew
+                ? $"Scheduled {courseName} on {startsAt:ddd, MMM d} at {startsAt:h:mm tt}."
+                : $"Updated the {courseName} session.";
+
+            draft = NewDraft(session.CourseId);
+            sessions = await LoadSessionsAsync(db, userId);
+        }
+        catch (DbUpdateException)
+        {
+            formMessage = "The study session couldn't be saved. Check the course and try again.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task DeleteSessionAsync(StudySession session)
+    {
+        if (isBusy || pendingDeleteId != session.Id)
+            return;
+
+        isBusy = true;
+
+        try
+        {
+            var userId = await CurrentUser.GetRequiredUserIdAsync();
+
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var deleted = await db.StudySessions
+                .Where(item => item.Id == session.Id && item.UserId == userId)
+                .ExecuteDeleteAsync();
+
+            if (draft.Id == session.Id)
+                CancelEdit();
+
+            pendingDeleteId = null;
+            sessions.Remove(session);
+
+            formMessage = deleted == 1
+                ? $"Deleted the {session.Course.Name} session on {session.StartTime:ddd, MMM d}."
+                : "This study session is no longer available.";
+        }
+        catch (DbException)
+        {
+            formMessage = "The study session couldn't be deleted. Please try again.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private RenderFragment SessionRow(StudySession session, bool isPast) => __builder =>
+    {
+        var end = EndOf(session);
+        var inProgress = !isPast && session.StartTime <= NowLocal;
+
+        <li class="list-group-item @(isPast ? "text-body-secondary" : "")" @key="session.Id"
+            style="@(string.IsNullOrEmpty(session.Course.Color) ? "" : $"border-left: 5px solid {session.Course.Color}")">
+            <strong>@session.Course.Name</strong>
+
+            @if (inProgress)
+            {
+                <span class="badge text-bg-success ms-1">In progress</span>
+            }
+
+            <div>
+                @session.StartTime.ToString("ddd, MMM d, yyyy") ·
+                @session.StartTime.ToString("h:mm tt") – @end.ToString("h:mm tt")
+                (@FormatDuration(session.DurationMinutes))
+            </div>
+
+            <button type="button" class="btn btn-sm btn-outline-primary mt-2"
+                    disabled="@isBusy" @onclick="() => StartEdit(session)">
+                Edit
+            </button>
+
+            @if (pendingDeleteId == session.Id)
+            {
+                <div class="mt-2">
+                    <span>Delete this study session?</span>
+
+                    <button type="button" class="btn btn-sm btn-danger ms-2"
+                            disabled="@isBusy"
+                            @onclick="() => DeleteSessionAsync(session)">
+                        Confirm delete
+                    </button>
+
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-2"
+                            disabled="@isBusy"
+                            @onclick="() => pendingDeleteId = null">
+                        Cancel
+                    </button>
+                </div>
+            }
+            else
+            {
+                <button type="button" class="btn btn-sm btn-outline-danger mt-2 ms-2"
+                        disabled="@isBusy" @onclick="() => pendingDeleteId = session.Id">
+                    Delete
+                </button>
+            }
+        </li>
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (jsModule is not null)
+        {
+            try
+            {
+                await jsModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+}

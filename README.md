@@ -80,6 +80,30 @@ The course, title, and due date are required. A blank or whitespace-only title
 prevents the assignment from being saved. Students can select only their own
 courses and manage only their own assignments.
 
+### Study Sessions
+
+Students can schedule study sessions for their own courses so they can plan
+their study time.
+
+1. Open **Study Sessions** from the sidebar. You need at least one course first.
+2. Choose a course, a date, a start time, and a duration in minutes
+   (5 to 720). The form suggests the next full hour and 60 minutes.
+3. Click **Schedule Session**. Sessions can't be scheduled in the past: past
+   days are greyed out in the date picker, and a start time that has already
+   passed shows an error and won't save.
+4. To change a session, click **Edit**, then **Save Changes**. Use **Cancel** to
+   discard the edit. A session that already happened can still be edited
+   (for example, its duration), but its start can't be moved into the past.
+5. To remove a session, click **Delete**, then **Confirm delete**.
+
+Upcoming sessions are listed soonest first, with an **In progress** badge while
+a session is running. Finished sessions move to **Past Sessions**.
+
+"Now" is worked out in the student's own time zone (reported by the browser),
+not the server's, since Azure runs in UTC. `StudySession.StartTime` stores the
+local start time the student entered, which the calendar and reminders can use
+as is.
+
 ## Deployment
 
 ClassMate uses Azure App Service for hosting and Neon PostgreSQL for its
