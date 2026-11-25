@@ -5,6 +5,8 @@
 @using Microsoft.EntityFrameworkCore
 @inject IServiceScopeFactory ScopeFactory
 @inject ClassMate.Services.CurrentUser CurrentUser
+@inject ClassMate.Services.UserClock Clock
+@inject ILogger<Assignments> Logger
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
 
@@ -32,7 +34,7 @@
 
         <div class="mb-3">
             <label for="title" class="form-label">Assignment title</label>
-            <InputText id="title" class="form-control"
+            <InputText @ref="titleInput" id="title" class="form-control"
                        @bind-Value="draft.Title" />
         </div>
 
@@ -41,7 +43,7 @@
             <InputDate id="due-date" class="form-control"
                        @bind-Value="draft.DueDate" />
 
-            @if (draft.IsNew && draft.HasPastDueDate)
+            @if (draft.IsNew && HasPastDueDate)
             {
                 <p class="form-text text-warning-emphasis" role="status">
                     This due date has already passed. You can still save the assignment,
@@ -77,10 +79,8 @@
         </div>
     </fieldset>
 
-    @if (!string.IsNullOrEmpty(formMessage))
-    {
-        <p class="mt-2" role="status">@formMessage</p>
-    }
+    @* Always rendered so screen readers announce text changes inside it *@
+    <p class="mt-2" role="status">@formMessage</p>
 </EditForm>
 
 <h2 class="h4 mt-4">Saved Assignments</h2>
@@ -99,7 +99,7 @@ else
         </select>
     </div>
 
-    var today = DateTime.Today;
+    var today = Clock.Today;
 
     <ul class="list-group">
         @foreach (var item in SortedAssignments)
@@ -127,11 +127,13 @@ else
                         disabled="@isBusy"
                         @onclick="() => SetCompletionAsync(item, !item.Completed)">
                     @(item.Completed ? "Mark incomplete" : "Mark complete")
+                    <span class="visually-hidden">: @item.Title</span>
                 </button>
 
                 <button type="button" class="btn btn-sm btn-outline-primary ms-2"
                         disabled="@isBusy" @onclick="() => StartEdit(item)">
                     Edit
+                    <span class="visually-hidden">@item.Title</span>
                 </button>
 
                 @if (pendingDeleteId == item.Id)
@@ -157,6 +159,7 @@ else
                     <button type="button" class="btn btn-sm btn-outline-danger ms-2"
                             disabled="@isBusy" @onclick="() => pendingDeleteId = item.Id">
                         Delete
+                        <span class="visually-hidden">@item.Title</span>
                     </button>
                 }
             </li>
@@ -172,6 +175,8 @@ else
     private string formMessage = "";
     private bool isBusy;
     private AssignmentSort assignmentSort;
+    private InputText? titleInput;
+    private bool focusTitleAfterRender;
 
     private enum AssignmentSort
     {
@@ -179,10 +184,15 @@ else
         Priority
     }
 
-    // Preserves due date order with the same priority
+    // The query orders by due date, then title, then id. OrderBy is a
+    // stable sort, so ties on priority keep that order. The Priority enum is
+    // declared High, Medium, Low
     private IEnumerable<Assignment> SortedAssignments => assignmentSort == AssignmentSort.Priority
         ? savedAssignments.OrderBy(item => item.Priority)
         : savedAssignments;
+
+    private bool HasPastDueDate =>
+        draft.DueDate is DateTime date && date.Date < Clock.Today;
 
     private sealed class AssignmentDraft
     {
@@ -190,23 +200,29 @@ else
 
         public bool IsNew => Id == 0;
 
-        public bool HasPastDueDate =>
-            DueDate is DateTime date && date.Date < DateTime.Today;
-
         [Range(1, int.MaxValue, ErrorMessage = "Choose a course.")]
         public int CourseId { get; set; }
 
         [Required(ErrorMessage = "Enter an assignment title.")]
+        [StringLength(200, ErrorMessage = "Keep the title under 200 characters")]
         public string Title { get; set; } = "";
 
         [Required(ErrorMessage = "Choose a due date.")]
-        public DateTime? DueDate { get; set; } = DateTime.Today;
+        public DateTime? DueDate { get; set; }
 
         public Priority Priority { get; set; } = Priority.Medium;
     }
 
+    private AssignmentDraft NewDraft(int courseId = 0) => new()
+    {
+        CourseId = courseId,
+        DueDate = Clock.Today
+    };
+
     protected override async Task OnInitializedAsync()
     {
+        draft = NewDraft();
+
         var userId = await CurrentUser.GetRequiredUserIdAsync();
 
         using var scope = ScopeFactory.CreateScope();
@@ -219,6 +235,26 @@ else
             .ToListAsync();
 
         savedAssignments = await LoadAssignmentsAsync(db, userId);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // browser's time zone is read here, once the circuit is connected.
+            await Clock.InitializeAsync();
+
+            if (draft.IsNew && string.IsNullOrEmpty(draft.Title))
+                draft.DueDate = Clock.Today;
+
+            StateHasChanged();
+        }
+
+        if (focusTitleAfterRender && titleInput?.Element is { } element)
+        {
+            focusTitleAfterRender = false;
+            await element.FocusAsync();
+        }
     }
 
     private Task<List<Assignment>> LoadAssignmentsAsync(
@@ -249,11 +285,12 @@ else
         };
 
         formMessage = "";
+        focusTitleAfterRender = true;
     }
 
     private void CancelEdit()
     {
-        draft = new AssignmentDraft { CourseId = draft.CourseId };
+        draft = NewDraft(draft.CourseId);
         formMessage = "";
     }
 
@@ -313,16 +350,26 @@ else
 
             await db.SaveChangesAsync();
 
-            draft = new AssignmentDraft { CourseId = assignment.CourseId };
+            draft = NewDraft(assignment.CourseId);
             formMessage = isNew
                 ? $"Saved “{assignment.Title}”."
                 : $"Updated “{assignment.Title}”.";
 
-            savedAssignments = await LoadAssignmentsAsync(db, userId);
+            // The save has succeeded so a failed refresh gets its own message failed message
+            try
+            {
+                savedAssignments = await LoadAssignmentsAsync(db, userId);
+            }
+            catch (DbException ex)
+            {
+                Logger.LogError(ex, "Assignment {AssignmentId} saved but the list could not be reloaded", assignment.Id);
+                formMessage += " The list couldn't be refreshed, so reload the page to see it";
+            }
         }
-        catch (DbUpdateException)
+        catch (Exception ex) when (ex is DbUpdateException or DbException)
         {
-            formMessage = "The assignment couldn't be saved. Check the course and try again.";
+            Logger.LogError(ex, "Could not save assignment {AssignmentId}", draft.Id);
+            formMessage = "The assignment couldn't be saved. Check the course and try again";
         }
         finally
         {
@@ -351,7 +398,7 @@ else
 
             if (updated == 0)
             {
-                formMessage = "This assignment is no longer available. Refresh the page";
+                formMessage = "This assignment is no longer available. Refresh the page.";
                 return;
             }
 
@@ -361,8 +408,9 @@ else
                 ? $"Marked “{item.Title}” complete."
                 : $"Marked “{item.Title}” incomplete.";
         }
-        catch (DbException)
+        catch (DbException ex)
         {
+            Logger.LogError(ex, "Could not update completion for assignment {AssignmentId}", item.Id);
             formMessage = "The assignment status couldn't be saved. Please try again";
         }
         finally
@@ -377,6 +425,7 @@ else
             return;
 
         isBusy = true;
+        formMessage = "";
 
         try
         {
@@ -400,8 +449,9 @@ else
                 ? $"Deleted “{item.Title}”."
                 : "This assignment is no longer available.";
         }
-        catch (DbException)
+        catch (DbException ex)
         {
+            Logger.LogError(ex, "Could not delete assignment {AssignmentId}", item.Id);
             formMessage = "The assignment couldn't be deleted. Please try again";
         }
         finally

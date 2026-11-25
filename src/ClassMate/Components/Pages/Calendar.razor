@@ -1,0 +1,185 @@
+@page "/calendar"
+@using System.Text.RegularExpressions
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ScheduleService Schedule
+@inject ILogger<Calendar> Logger
+
+<PageTitle>Calendar · ClassMate</PageTitle>
+<h1>Calendar</h1>
+<ScheduleRefresh @ref="refresh" OnRefresh="LoadAsync" />
+
+@if (anchor is not null)
+{
+    <div class="d-flex flex-wrap gap-2 my-3">
+        <select class="form-select w-auto" aria-label="Calendar view" @bind="view" @bind:after="ReloadAsync">
+            <option value="@CalendarView.Week">Week</option>
+            <option value="@CalendarView.Month">Month</option>
+        </select>
+
+        <button type="button" class="btn btn-outline-primary" @onclick="() => MoveAsync(-1)">
+            Previous<span class="visually-hidden"> @ViewName</span>
+        </button>
+        <button type="button" class="btn btn-outline-secondary" @onclick="GoToTodayAsync">Today</button>
+        <button type="button" class="btn btn-outline-primary" @onclick="() => MoveAsync(1)">
+            Next<span class="visually-hidden"> @ViewName</span>
+        </button>
+    </div>
+
+    @if (loadFailed)
+    {
+        <p class="text-danger" role="alert">
+            The calendar couldn't be loaded. Try again in a moment
+        </p>
+    }
+
+    @if (first != default)
+    {
+        <h2 class="h4">
+            @(shownView == CalendarView.Month ? shownAnchor.ToString("MMMM yyyy") : $"Week of {first:MMM d, yyyy}")
+        </h2>
+
+        <div class="calendar-scroll">
+            <div class="calendar-grid">
+                @for (var day = first; day < end; day = day.AddDays(1))
+                {
+                    <section class="border rounded p-2">
+                        <strong>@day.ToString("ddd, MMM d")</strong>
+
+                        @if (itemsByDay.TryGetValue(day, out var dayItems))
+                        {
+                            foreach (var item in dayItems)
+                            {
+                                <details class="mt-2 ps-1"
+                                         style="border-inline-start: 5px solid @SafeColor(item.CourseColor)"
+                                         @key="(item.IsAssignment, item.Id)">
+                                    <summary>@item.Title · @item.Course</summary>
+                                    <small>@item.Details</small>
+                                </details>
+                            }
+                        }
+                    </section>
+                }
+            </div>
+        </div>
+    }
+    else if (!loadFailed)
+    {
+        <p role="status">Loading calendar…</p>
+    }
+}
+else
+{
+    <p role="status">Loading calendar…</p>
+}
+
+@code {
+    private enum CalendarView
+    {
+        Week,
+        Month
+    }
+
+    private static readonly Regex HexColor = new("^#[0-9a-fA-F]{3,8}$", RegexOptions.Compiled);
+
+    private ScheduleRefresh? refresh;
+
+    // What the person asked for. Change immediately click.
+    private CalendarView view = CalendarView.Week;
+    private DateTime? anchor;
+
+    // What is on screen. Only change together, once load has finished,
+    private CalendarView shownView = CalendarView.Week;
+    private DateTime shownAnchor;
+    private DateTime first;
+    private DateTime end;
+    private Dictionary<DateTime, List<ScheduleItem>> itemsByDay = new();
+
+    private DateTime today;
+    private bool loadFailed;
+    private int requestNumber;
+
+    private string ViewName => view == CalendarView.Month ? "month" : "week";
+
+    private static DateTime MondayOf(DateTime day)
+    {
+        var daysSinceMonday = ((int)day.DayOfWeek + 6) % 7;
+        return day.AddDays(-daysSinceMonday);
+    }
+
+    private static (DateTime Start, DateTime End) GetRange(DateTime date, CalendarView view)
+    {
+        if (view == CalendarView.Week)
+        {
+            var monday = MondayOf(date);
+            return (monday, monday.AddDays(7));
+        }
+
+        var month = new DateTime(date.Year, date.Month, 1);
+        var rangeStart = MondayOf(month);
+        var rangeEnd = MondayOf(month.AddMonths(1).AddDays(-1)).AddDays(7);
+        return (rangeStart, rangeEnd);
+    }
+
+    private static string SafeColor(string? color) =>
+        color is not null && HexColor.IsMatch(color) ? color : "var(--bs-secondary)";
+
+    private Task MoveAsync(int step)
+    {
+        anchor = view == CalendarView.Month
+            ? new DateTime(anchor!.Value.Year, anchor.Value.Month, 1).AddMonths(step)
+            : anchor!.Value.AddDays(7 * step);
+
+        return ReloadAsync();
+    }
+
+    private Task GoToTodayAsync()
+    {
+        anchor = today;
+        return ReloadAsync();
+    }
+
+    private Task ReloadAsync() => refresh!.ReloadAsync();
+
+    private async Task LoadAsync(TimeZoneInfo zone)
+    {
+        today = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).Date;
+        anchor ??= today;
+
+        var requestedView = view;
+        var requestedAnchor = anchor.Value;
+        var (rangeStart, rangeEnd) = GetRange(requestedAnchor, requestedView);
+
+        var request = ++requestNumber;
+        List<ScheduleItem> loaded;
+
+        try
+        {
+            loaded = await Schedule.GetItemsAsync(rangeStart, rangeEnd);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogError(ex, "Could not load schedule items for {Start} to {End}", rangeStart, rangeEnd);
+
+            if (request == requestNumber)
+                loadFailed = true;
+
+            return;
+        }
+
+        // Newer request has started
+        if (request != requestNumber)
+            return;
+
+        // Group once per load instead of filtering the whole list
+        var byDay = new Dictionary<DateTime, List<ScheduleItem>>();
+        for (var day = rangeStart; day < rangeEnd; day = day.AddDays(1))
+        {
+            var occurring = loaded.Where(item => item.OccursOn(day)).ToList();
+            if (occurring.Count > 0)
+                byDay[day] = occurring;
+        }
+
+        (shownView, shownAnchor, first, end, itemsByDay, loadFailed) =
+            (requestedView, requestedAnchor, rangeStart, rangeEnd, byDay, false);
+    }
+}

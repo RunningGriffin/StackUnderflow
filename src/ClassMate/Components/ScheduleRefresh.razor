@@ -1,0 +1,54 @@
+@using System.Diagnostics
+@implements IDisposable
+@inject ClassMate.Services.UserClock Clock
+
+@code {
+    private readonly CancellationTokenSource stop = new();
+
+    [Parameter]
+    public EventCallback<TimeZoneInfo> OnRefresh { get; set; }
+
+    [Parameter]
+    public TimeSpan Interval { get; set; } = TimeSpan.FromMinutes(5);
+
+    public Task ReloadAsync() => OnRefresh.InvokeAsync(Clock.Zone);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        await Clock.InitializeAsync();
+        await ReloadAsync();
+
+        if (stop.IsCancellationRequested)
+            return;
+
+        _ = RunTimerAsync(stop.Token);
+    }
+
+    private async Task RunTimerAsync(CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(Interval);
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+                await InvokeAsync(ReloadAsync);
+        }
+        catch (OperationCanceledException)
+        {
+            // The component was disposed
+        }
+        catch (ObjectDisposedException)
+        {
+            // The circuit ended while a reload was in flight
+        }
+    }
+
+    public void Dispose()
+    {
+        stop.Cancel();
+        stop.Dispose();
+    }
+}

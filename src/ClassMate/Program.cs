@@ -16,6 +16,8 @@ builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<IdentityRedirectManager>();
 builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
 builder.Services.AddScoped<CurrentUser>();
+builder.Services.AddScoped<UserClock>();
+builder.Services.AddScoped<ScheduleService>();
 
 builder.Services.AddScoped<ClassMate.Services.CourseService>();
 
