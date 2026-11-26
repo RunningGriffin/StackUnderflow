@@ -1,7 +1,5 @@
-using System.Globalization;
 using System.Text.RegularExpressions;
 using ClassMate.Data;
-using Microsoft.AspNetCore.Routing.Tree;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClassMate.Services;
