@@ -142,7 +142,7 @@ else
 
     private async Task LoadAsync(TimeZoneInfo zone)
     {
-        today = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).Date;
+        today = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone).Date;
         anchor ??= today;
 
         var requestedView = view;

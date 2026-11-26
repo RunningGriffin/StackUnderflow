@@ -11,7 +11,7 @@ public sealed class UserClock(IJSRuntime js) : IAsyncDisposable
     public TimeZoneInfo Zone => zone;
 
     public DateTime Today =>
-        TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).Date;
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone).Date;
 
     /// Reads the browser's time zone. Safe to call more than once
     public async Task InitializeAsync()
