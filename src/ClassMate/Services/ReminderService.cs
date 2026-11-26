@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using ClassMate.Data;
+using Microsoft.AspNetCore.Routing.Tree;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClassMate.Services;
@@ -11,7 +13,8 @@ public sealed record Reminder(
     string Course,
     string CourseColor,
     DateTime DueAt,
-    DateTime? EndsAt);
+    DateTime? EndsAt,
+    TimeSpan TimeUntilDue);
 
 public sealed record ReminderSnapshot(double LeadHours, List<Reminder> Items);
 
@@ -54,7 +57,7 @@ public sealed class ReminderService(IServiceScopeFactory scopeFactory, CurrentUs
     }
 
     public async Task<ReminderSnapshot> GetUpcomingAsync(
-        DateTime now, CancellationToken cancellationToken = default)
+        DateTimeOffset now, TimeZoneInfo zone, CancellationToken cancellationToken = default)
     {
         var userId = await currentUser.GetRequiredUserIdAsync();
 
@@ -62,13 +65,30 @@ public sealed class ReminderService(IServiceScopeFactory scopeFactory, CurrentUs
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
         var leadHours = await ReadLeadHoursAsync(db, userId, cancellationToken);
-        var until = now.AddHours(leadHours);
+        var window = TimeSpan.FromHours(leadHours);
+        var firstDate = UserClock.LocalTime(now, zone).Date;
+        var endDate = UserClock.LocalTime(now + window, zone).Date.AddDays(1);
+
+        bool IsUpcoming(DateTime localTime, out TimeSpan timeUntilDue)
+        {
+            // clock skipped by spring-forward moves forward by the gap
+            // ConvertedTimeToUtc uses standard time for a repeated fall-back hour
+            if (zone.IsInvalidTime(localTime))
+            {
+                var gap = zone.GetUtcOffset(localTime.AddDays(1)) - zone.GetUtcOffset(localTime.AddDays(-1));
+                localTime = localTime.Add(gap);
+            }
+
+            var utc = TimeZoneInfo.ConvertTimeToUtc(localTime, zone);
+            timeUntilDue = utc - now.UtcDateTime;
+            return timeUntilDue > TimeSpan.Zero && timeUntilDue <= window;
+        }
 
         var sessions = await db.StudySessions
             .AsNoTracking()
             .Where(session => session.UserId == userId &&
-                              session.StartTime > now &&
-                              session.StartTime <= until)
+                              session.StartTime >= firstDate &&
+                              session.StartTime < endDate)
             .Select(session => new
             {
                 session.Id,
@@ -83,8 +103,8 @@ public sealed class ReminderService(IServiceScopeFactory scopeFactory, CurrentUs
             .AsNoTracking()
             .Where(assignment => assignment.UserId == userId &&
                                  !assignment.Completed &&
-                                 assignment.DueDate >= now.Date &&
-                                 assignment.DueDate < until.Date.AddDays(1))
+                                 assignment.DueDate >= firstDate &&
+                                 assignment.DueDate < endDate)
             .Select(assignment => new
             {
                 assignment.Id,
@@ -99,6 +119,9 @@ public sealed class ReminderService(IServiceScopeFactory scopeFactory, CurrentUs
 
         foreach (var session in sessions)
         {
+            if (!IsUpcoming(session.StartTime, out var timeUntilDue))
+                continue;
+
             items.Add(new Reminder(
                 session.Id,
                 IsAssignment: false,
@@ -106,14 +129,15 @@ public sealed class ReminderService(IServiceScopeFactory scopeFactory, CurrentUs
                 Course: session.CourseName,
                 CourseColor: SafeColor(session.CourseColor),
                 DueAt: session.StartTime,
-                EndsAt: session.StartTime.AddMinutes(session.DurationMinutes)));
+                EndsAt: session.StartTime.AddMinutes(session.DurationMinutes),
+                TimeUntilDue: timeUntilDue));
         }
 
         foreach (var assignment in assignments)
         {
             var dueAt = assignment.DueDate.Date.AddDays(1).AddMinutes(-1);
 
-            if (dueAt <= now || dueAt > until)
+            if (!IsUpcoming(dueAt, out var timeUntilDue))
                 continue;
             
             items.Add(new Reminder(
@@ -123,12 +147,13 @@ public sealed class ReminderService(IServiceScopeFactory scopeFactory, CurrentUs
                 Course: assignment.CourseName,
                 CourseColor: SafeColor(assignment.CourseColor),
                 DueAt: dueAt,
-                EndsAt: null));
+                EndsAt: null,
+                TimeUntilDue: timeUntilDue));
         }
 
         return new ReminderSnapshot(
             leadHours,
-            items.OrderBy(item => item.DueAt).ThenBy(item => item.Title).ToList());
+            items.OrderBy(item => item.TimeUntilDue).ThenBy(item => item.Title).ToList());
     }
 
     public static string DescribeLead(double hours)

@@ -55,13 +55,13 @@
 
     private async Task LoadAsync(TimeZoneInfo zone)
     {
-        var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone);
+        var instant = DateTimeOffset.UtcNow;
+        var localNow = UserClock.LocalTime(instant, zone);
         var request = ++requestNumber;
 
         try
         {
-            var snapshot = await Reminders.GetUpcomingAsync(localNow);
-
+            var snapshot = await Reminders.GetUpcomingAsync(instant, zone);
             if (request != requestNumber)
                 return;
 
@@ -84,7 +84,7 @@
             return $"Due {day}";
 
         var ends = reminder.EndsAt is DateTime end ? $" - {end:h:mm tt}" : "";
-        var untilStart = reminder.DueAt - now;
+        var untilStart = reminder.TimeUntilDue;
         var relative = untilStart < TimeSpan.FromHours(24) ? $" ({Until(untilStart)})" : "";
 
         return $"{char.ToUpper(day[0])}{day[1..]} at {reminder.DueAt:h:mm tt}{ends}{relative}";

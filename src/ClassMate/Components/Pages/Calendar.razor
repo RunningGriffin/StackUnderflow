@@ -83,11 +83,9 @@ else
 
     private ScheduleRefresh? refresh;
 
-    // What the person asked for. Change immediately click.
     private CalendarView view = CalendarView.Week;
     private DateTime? anchor;
 
-    // What is on screen. Only change together, once load has finished,
     private CalendarView shownView = CalendarView.Week;
     private DateTime shownAnchor;
     private DateTime first;
@@ -142,7 +140,7 @@ else
 
     private async Task LoadAsync(TimeZoneInfo zone)
     {
-        today = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone).Date;
+        today = UserClock.LocalTime(DateTimeOffset.UtcNow, zone).Date;
         anchor ??= today;
 
         var requestedView = view;
