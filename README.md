@@ -122,6 +122,26 @@ Students can set a weekly study-hours goal and log the hours they study.
 6. To remove a mistake, click **Delete** next to an entry under
    **This Week's Entries**, then **Confirm delete**.
 
+### Weekly and Monthly Calendar
+
+Students can see their assignment deadlines and study sessions in one calendar so they can plan their week or month
+
+1. Open Calendar from the sidebar and choose Week or Month
+2. Use Previous and Next to move between weeks or months. Select Today to return to the current week or month
+3. Click assignment or study session to expand its details. Each item displays its course name and color
+
+The calendar only shows their own items. When you add, edit, or delete an assignment or study session, the calendar reflects that change
+
+### Assignment and Study Session Reminders
+
+Students can choose how far in advance they see reminders so they can prepare for deadlines and study sessions
+
+1. Open Settings and choose 1 hour, 3 hours, 1day, or 2 days before the event. The default is 1 day
+2. Click Save settings, then Home. The Upcoming reminders section shows the assignments and study sessions within that time window
+
+Study session reminders use the scheduled start time. For reminders, an assignment is due at 11:59 p.m. on its due date in local time.
+Rescheduling an item updates its reminder. Marking as assignment complete removes it from upcoming reminders.
+
 ## Deployment
 
 ClassMate uses Azure App Service for hosting and Neon PostgreSQL for its

@@ -1,0 +1,10 @@
+.calendar-scroll {
+    overflow-x: auto;
+}
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(6rem, 1fr));
+    gap: .25rem;
+    overflow-wrap: anywhere;
+}

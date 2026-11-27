@@ -1,0 +1,116 @@
+@inject ClassMate.Services.ReminderService Reminders
+@inject ILogger<UpcomingReminders> Logger
+
+<ScheduleRefresh OnRefresh="LoadAsync" Interval="TimeSpan.FromMinutes(1)" />
+
+<section class="mt-4" aria-labelledby="reminders-heading">
+    <h2 id="reminders-heading" class="h4">Upcoming reminders</h2>
+
+    @if (loadFailed)
+    {
+        <p class="text-danger" role="alert">Reminders couldn't be loaded. Try again later</p>
+    }
+    else if (!loaded)
+    {
+        <p role="status">Loading reminders...</p>
+    }
+    else if (items.Count == 0)
+    {
+        <p>
+            Nothing is due in the next @ClassMate.Services.ReminderService.DescribeLead(leadHours)
+            <a href="settings">Change reminder time</a>
+        </p>
+    }
+    else
+    {
+        <p class="form-text">
+            Showing the next @ClassMate.Services.ReminderService.DescribeLead(leadHours)
+            <a href="settings">Change reminder time</a>
+        </p>
+
+        <ul class="list-group">
+            @foreach (var reminder in items)
+            {
+                <li class="list-group-item"
+                    style="border-inline-start: 5px solid @reminder.CourseColor"
+                    @key="(reminder.IsAssignment, reminder.Id)">
+                    <span class="badge @(reminder.IsAssignment ? "text-bg-primary" : "text-bg-info") me-2">
+                        @(reminder.IsAssignment ? "Assignment" : "Study session")
+                    </span>
+                    <strong>@reminder.Title</strong> · @reminder.Course
+                    <div>@WhenText(reminder)</div>
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    private List<ClassMate.Services.Reminder> items = [];
+    private double leadHours = ClassMate.Services.ReminderService.DefaultLeadHours;
+    private DateTime now;
+    private bool loaded;
+    private bool loadFailed;
+    private int requestNumber;
+
+    private async Task LoadAsync(TimeZoneInfo zone)
+    {
+        var instant = DateTimeOffset.UtcNow;
+        var localNow = UserClock.LocalTime(instant, zone);
+        var request = ++requestNumber;
+
+        try
+        {
+            var snapshot = await Reminders.GetUpcomingAsync(instant, zone);
+            if (request != requestNumber)
+                return;
+
+            (now, leadHours, items, loaded, loadFailed) = (localNow, snapshot.LeadHours, snapshot.Items, true, false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogError(ex, "Could not load reminders");
+
+            if (request == requestNumber)
+                loadFailed = true;
+        }
+    }
+
+    private string WhenText(ClassMate.Services.Reminder reminder)
+    {
+        var day = DayLabel(reminder.DueAt.Date);
+
+        if (reminder.IsAssignment)
+            return $"Due {day}";
+
+        var ends = reminder.EndsAt is DateTime end ? $" - {end:h:mm tt}" : "";
+        var untilStart = reminder.TimeUntilDue;
+        var relative = untilStart < TimeSpan.FromHours(24) ? $" ({Until(untilStart)})" : "";
+
+        return $"{char.ToUpper(day[0])}{day[1..]} at {reminder.DueAt:h:mm tt}{ends}{relative}";
+    }
+
+    private string DayLabel(DateTime date)
+    {
+        if (date == now.Date)
+            return "today";
+
+        if (date == now.Date.AddDays(1))
+            return "tomorrow";
+
+        return date.ToString("ddd, MMM d");
+    }
+
+    private static string Until(TimeSpan span)
+    {
+        var minutes = Math.Max(1, (int)Math.Ceiling(span.TotalMinutes));
+
+        if (minutes < 60)
+            return $"in {minutes} min";
+
+        var hours = minutes / 60;
+        var rest = minutes % 60;
+
+        return rest == 0 ? $"in {hours} h" : $"in {hours} h {rest} min";
+    }
+}

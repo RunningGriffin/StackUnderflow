@@ -1,5 +1,4 @@
 ﻿@implements IDisposable
-
 @inject NavigationManager NavigationManager
 
 <div class="top-row ps-3 navbar navbar-dark">
@@ -18,56 +17,17 @@
             </NavLink>
         </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="courses">
-                <span class="bi bi-card-list nav-menu-icon" aria-hidden="true"></span> Courses
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="study-sessions">
-                <span class="bi bi-clock nav-menu-icon" aria-hidden="true"></span> Study Sessions
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="goals">
-                <span class="bi bi-bullseye nav-menu-icon" aria-hidden="true"></span> Study Goals
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="assignments">
-                <span class="bi bi-book nav-menu-icon" aria-hidden="true"></span> Assignments
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="auth">
-                <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Auth Required
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="settings">
-                <span class="bi bi-gear nav-menu-icon" aria-hidden="true"></span> Settings
-            </NavLink>
-        </div>
-
         <AuthorizeView>
             <Authorized>
+                @foreach (var link in AppLinks)
+                {
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="@link.Href">
+                            <span class="bi @link.Icon nav-menu-icon" aria-hidden="true"></span> @link.Label
+                        </NavLink>
+                    </div>
+                }
+
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="Account/Manage">
                         <span class="bi bi-person-fill-nav-menu" aria-hidden="true"></span> @context.User.Identity?.Name
@@ -100,6 +60,20 @@
 </div>
 
 @code {
+    private sealed record NavLinkItem(string Href, string Icon, string Label);
+
+    // Every page here is marked [Authorize], so the links are only shown to
+    // signed-in users. Add a new page by adding one line.
+    private static readonly NavLinkItem[] AppLinks =
+    [
+        new("courses", "bi-card-list", "Courses"),
+        new("study-sessions", "bi-clock", "Study Sessions"),
+        new("goals", "bi-bullseye", "Study Goals"),
+        new("calendar", "bi-calendar3", "Calendar"),
+        new("assignments", "bi-book", "Assignments"),
+        new("settings", "bi-gear", "Settings")
+    ];
+
     private string? currentUrl;
 
     protected override void OnInitialized()
@@ -119,4 +93,3 @@
         NavigationManager.LocationChanged -= OnLocationChanged;
     }
 }
-
